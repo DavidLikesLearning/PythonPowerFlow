@@ -1,11 +1,11 @@
-class Transmission_Line:
+class Transformer:
     """
-    define transmisison line  class
+    define transformer  class
 
     Attributes:
-        name: name of the generator
-        bus_1_name: bus 1 name
-        bus_2_name: bus 2 name
+        name: name of the transformer
+        bus1_name: bus 1 name
+        bus2_name: bus 2 name
         r: transmission line resistance in ohms
         x: transmission line reactance in ohms
         g: transmission line conductance in siemens
