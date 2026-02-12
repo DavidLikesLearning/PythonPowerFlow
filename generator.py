@@ -7,8 +7,6 @@ class Generator:
         bus_name: bus name
         mw_setpoint: setpoint
         v_setpoint: setpoint
-
-
     """
     def __init__(self, name, bus_name, mw_setpoint, v_setpoint=None):
         self.name = name
