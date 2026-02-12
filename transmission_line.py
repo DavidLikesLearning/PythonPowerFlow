@@ -19,31 +19,39 @@ class TransmissionLine:
     """
 
     def __init__(self, name: str, bus1_name: str, bus2_name: str, r: float, x: float):
-        self.name = name
-        self.bus1_name = bus1_name
-        self.bus2_name = bus2_name
-        self._validate_params(r, x)
+        self._name = name
+        self._bus1_name = bus1_name
+        self._bus2_name = bus2_name
         self._r = r
         self._x = x
+        self._validate_params(name, bus1_name, bus2_name, r, x)
+
 
 
     def __repr__(self) -> str:
         # Unambiguous, developer-focused, ideally reconstructable representation
         return (
-            f"TransmissionLine(name={self.name!r}, "
-            f"bus1_name={self.bus1_name!r}, "
-            f"bus2_name={self.bus2_name!r}, "
-            f"r={self.r!r}, x={self.x!r})"
+            f"TransmissionLine(name={self._name!r}, "
+            f"bus1_name={self._bus1_name!r}, "
+            f"bus2_name={self._bus2_name!r}, "
+            f"r={self._r!r}, x={self._x!r})"
         )
 
     def __str__(self) -> str:
         # Human-readable summary
         return (
-            f"Transmission line {self.name} "
-            f"({self.bus1_name} ↔ {self.bus2_name}): "
-            f"r={self.r} Ω, x={self.x} Ω, g={self.g:.6f} S"
+            f"Transmission line {self._name} "
+            f"({self._bus1_name} ↔ {self._bus2_name}): "
+            f"r={self._r} Ω, x={self._x} Ω, g={self._g:.6f} S"
         )
-    def _validate_params(self, r: float, x: float) -> None:
+    def _validate_params(self,name:str, bus1_name:str, bus2_name:str,
+                         r: float, x: float) -> None:
+        if (not isinstance(name, str) or
+                not isinstance(bus1_name, str) or
+                    not isinstance(bus2_name, str)):
+            raise ValueError("name must be a non-empty string")
+        if name == "" or bus1_name == "" or bus2_name == "":
+            raise ValueError("name must be a non-empty string")
         if r < 0 or x < 0:
             raise ValueError("r and x must be non-negative.")
         if r == 0 and x == 0:
@@ -110,11 +118,11 @@ class TransmissionLine:
         denom = (self.r ** 2) + (self.x ** 2)
         if denom == 0:
             raise ZeroDivisionError("g is undefined when r == 0 and x == 0")
-        return self.r / denom
+        return self._r / denom
 
     # Optional: keep your original method name (but corrected spelling)
     def calc_g(self) -> float:
-        return self.g
+        return self._g
 
 def test_g_computation_basic():
     line = TransmissionLine("L1", "BUS1", "BUS2", r=1.0, x=1.0)
@@ -139,8 +147,8 @@ def test_negative_r_rejected():
         TransmissionLine("L1", "BUS1", "BUS2", r=-0.1, x=1.0)
 
 def test_g_undefined_when_r_and_x_zero():
-    line = TransmissionLine("L1", "BUS1", "BUS2", r=0.0, x=0.0)
     with pytest.raises(ValueError):
+        line = TransmissionLine("L1", "BUS1", "BUS2", r=0.0, x=0.0)
         _ = line.g
 
 if __name__ == "__main__":
