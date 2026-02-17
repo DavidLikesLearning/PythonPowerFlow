@@ -84,31 +84,31 @@ def test_bus():
     Bus.reset_index_counter()
     
     # Test 1: Create a bus with automatic indexing
-    bus1 = Bus("Bus1")
+    bus1 = Bus("Bus1",120.0)
     print(f"Test 1 - Created bus: {bus1}")
     assert bus1.name == "Bus1"
     assert bus1.bus_index == 1
-    assert bus1.voltage == None
+    assert bus1.nominal_kv == 120.0
     
     # Test 2: Create another bus with automatic indexing
-    bus2 = Bus("Bus2")
+    bus2 = Bus("Bus2", 240.0)
     print(f"Test 2 - Created second bus: {bus2}")
     assert bus2.name == "Bus2"
     assert bus2.bus_index == 2
-    assert bus2.voltage == None
+    assert bus2.nominal_kv == 240.0
     
     # Test 3: Set voltage using internal method (for solver)
     bus1._set_voltage(240.0)
     print(f"Test 3 - After setting voltage: {bus1}")
-    assert bus1.voltage == 240.0
+    assert bus1.v == 240.0
 
     # Test 6: Test property access and unique indexing
-    bus4 = Bus("Property_Test")
+    bus4 = Bus("Property_Test",100)
     bus4._set_voltage(480.0)
-    print(f"Test 6 - Property access: name={bus4.name}, index={bus4.bus_index}, voltage={bus4.voltage}V")
+    print(f"Test 6 - Property access: name={bus4.name}, index={bus4.bus_index}, voltage={bus4.v}V")
     assert bus4.name == "Property_Test"  # Instead of bus4.bus_name
     assert bus4.bus_index == 3
-    assert bus4.voltage == 480.0
+    assert bus4.v == 480.0
     
     # Test 7: Verify voltage property is read-only for users
     print("Test 7 - Voltage property is read-only")
@@ -140,9 +140,9 @@ def main():
     
     # Create some example buses
     buses = [
-        Bus("Generator_Bus"),
-        Bus("Load_Bus_1"),
-        Bus("Load_Bus_2")
+        Bus("Generator_Bus",100),
+        Bus("Load_Bus_1",200),
+        Bus("Load_Bus_2",400)
     ]
     
     print("Initial bus states:")
@@ -161,7 +161,7 @@ def main():
         
     print("\nBus indexing demonstration:")
     print(f"Next bus will have index: {Bus._bus_index}")
-    new_bus = Bus("New_Bus")
+    new_bus = Bus("New_Bus",300)
     print(f"Created: {new_bus}")
 
 
