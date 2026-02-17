@@ -120,10 +120,6 @@ class TransmissionLine:
             raise ZeroDivisionError("g is undefined when r == 0 and x == 0")
         return self._r / denom
 
-    # Optional: keep your original method name (but corrected spelling)
-    def calc_g(self) -> float:
-        return self._g
-
 def test_g_computation_basic():
     line = TransmissionLine("L1", "BUS1", "BUS2", r=1.0, x=1.0)
     assert math.isclose(line.g, 0.5, rel_tol=0, abs_tol=1e-12)
