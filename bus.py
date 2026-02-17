@@ -21,7 +21,7 @@ class Bus:
     
     _bus_index = 1  # Class variable to track next available index
     
-    def __init__(self, name: str, nominal_kv: Optional[float] = None):
+    def __init__(self, name: str, nominal_kv: float):
         """
         Initialize a Bus instance.
         
@@ -32,13 +32,21 @@ class Bus:
         self.name = name
         self.bus_index = Bus._bus_index
         Bus._bus_index += 1
-        self.nominal_kv = nominal_kv  # Initial voltage, to be set by solver # remove attribute direct access
+        self._nominal_kv = nominal_kv  # Initial voltage, to be set by solver # remove attribute direct access
+        self._v = 0.0  # Internal variable to store voltage, set by solver
+    
     
     @property
-    def voltage(self) -> Optional[float]:
+    def v(self) -> float:
+        """Get the voltage at the bus in volts (read-only for users)."""
+        return self._v
+    
+    @property
+    def nominal_kv(self) -> float:
         """Get the voltage at the bus in volts (read-only for users)."""
         return self.nominal_kv
     
+
     def _set_voltage(self, value: float) -> None:
         """
         Set the voltage at the bus (intended for use by solver classes).
@@ -50,7 +58,7 @@ class Bus:
             This method is intended for use by solver classes and should not be
             called directly by users.
         """
-        self.nominal_kv = value
+        self._v = value
     
     @classmethod
     def reset_index_counter(cls) -> None:
