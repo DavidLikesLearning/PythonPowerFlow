@@ -33,7 +33,7 @@ class Bus:
         self.bus_index = Bus._bus_index
         Bus._bus_index += 1
         self._nominal_kv = nominal_kv  # Initial voltage, to be set by solver # remove attribute direct access
-        self._v = 0.0  # Internal variable to store voltage, set by solver
+        self._v = nominal_kv  # Internal variable to store voltage, set by solver
     
     
     @property
@@ -43,8 +43,8 @@ class Bus:
     
     @property
     def nominal_kv(self) -> float:
-        """Get the voltage at the bus in volts (read-only for users)."""
-        return self.nominal_kv
+        """Get the nominal voltage of the bus in kilovolts (read-only for users)."""
+        return self._nominal_kv
     
 
     def _set_voltage(self, value: float) -> None:
