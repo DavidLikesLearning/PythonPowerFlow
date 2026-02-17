@@ -1,5 +1,6 @@
 # circuit.py
 from __future__ import annotations
+import warnings
 class Circuit:
     """
     Circuit class for power system network modeling.
@@ -29,6 +30,9 @@ class Circuit:
         """
         if not isinstance(name, str) or not name.strip():
             raise ValueError("name must be a non-empty string")
+
+        if name != name.strip():
+            raise warnings.warn("Circuit name is stripped in processing.")
 
         self._name = name.strip()
         self._buses = {}
