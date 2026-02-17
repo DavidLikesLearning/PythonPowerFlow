@@ -1,0 +1,118 @@
+@startuml Equipment_Classes
+
+skinparam classAttributeIconSize 0
+skinparam class {
+    BackgroundColor<<Equipment>> LightYellow
+    BorderColor Black
+    ArrowColor Black
+}
+
+class Bus {
+    - _name: str
+    - _nominal_kv: float
+    - _bus_index: int
+    {static} - _counter: int
+    --
+    + __init__(name: str, nominal_kv: float)
+    + __repr__(): str
+    + __str__(): str
+    - _validate_params(name: str, nominal_kv: float): None
+    + {property} name: str
+    + {property} nominal_kv: float
+    + {property} bus_index: int
+}
+
+class Transformer {
+    - _name: str
+    - _bus1_name: str
+    - _bus2_name: str
+    - _r: float
+    - _x: float
+    --
+    + __init__(name: str, bus1_name: str, bus2_name: str, r: float, x: float)
+    + __repr__(): str
+    + __str__(): str
+    - _validate_params(name: str, bus1_name: str, bus2_name: str, r: float, x: float): None
+    + {property} name: str
+    + {property} bus1_name: str
+    + {property} bus2_name: str
+    + {property} r: float
+    + {property} x: float
+}
+
+class TransmissionLine {
+    - _name: str
+    - _bus1_name: str
+    - _bus2_name: str
+    - _r: float
+    - _x: float
+    - _g: float
+    - _b: float
+    --
+    + __init__(name: str, bus1_name: str, bus2_name: str, r: float, x: float, g: float, b: float)
+    + __repr__(): str
+    + __str__(): str
+    - _validate_params(name: str, bus1_name: str, bus2_name: str, r: float, x: float, g: float, b: float): None
+    + {property} name: str
+    + {property} bus1_name: str
+    + {property} bus2_name: str
+    + {property} r: float
+    + {property} x: float
+    + {property} g: float
+    + {property} b: float
+}
+
+class Load {
+    - _name: str
+    - _bus1_name: str
+    - _mw: float
+    - _mvar: float
+    --
+    + __init__(name: str, bus1_name: str, mw: float, mvar: float)
+    + __repr__(): str
+    + __str__(): str
+    - _validate_params(name: str, bus1_name: str, mw: float, mvar: float): None
+    + {property} name: str
+    + {property} bus1_name: str
+    + {property} mw: float
+    + {property} mvar: float
+    + {property} mva: float
+}
+
+class Generator {
+    - _name: str
+    - _bus1_name: str
+    - _voltage_setpoint: float
+    - _mw_setpoint: float
+    --
+    + __init__(name: str, bus1_name: str, voltage_setpoint: float, mw_setpoint: float)
+    + __repr__(): str
+    + __str__(): str
+    - _validate_params(name: str, bus1_name: str, voltage_setpoint: float, mw_setpoint: float): None
+    + {property} name: str
+    + {property} bus1_name: str
+    + {property} voltage_setpoint: float
+    + {property} mw_setpoint: float
+}
+
+note right of Bus
+  Each Bus instance gets a unique
+  bus_index via class-level counter
+end note
+
+note right of TransmissionLine
+  Based on existing implementation
+  with validation and properties
+end note
+
+note right of Load
+  mva is computed as:
+  sqrt(mw² + mvar²)
+end note
+
+Bus "1..*" -- "0..*" Transformer : connects via bus1_name/bus2_name
+Bus "1..*" -- "0..*" TransmissionLine : connects via bus1_name/bus2_name
+Bus "1" -- "0..*" Load : connects via bus1_name
+Bus "1" -- "0..*" Generator : connects via bus1_name
+
+@enduml
