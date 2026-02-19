@@ -36,10 +36,10 @@ class Transformer:
     t = Transformer(name="T1", bus1="BusA", bus2="BusB", r=0.02, x=0.04)
     print(t.admittance_matrix)
     """
-    def __init__(self, name: str, bus1: str, bus2: str, r: float, x: float):
+    def __init__(self, name: str, bus1_name: str, bus2_name: str, r: float, x: float):
         self.name = name
-        self.bus1 = bus1
-        self.bus2 = bus2
+        self.bus1_name = bus1_name
+        self.bus2_name = bus2_name
         self._validate_params(r, x)
         self._r = r
         self._x = x
@@ -48,10 +48,10 @@ class Transformer:
         self._admittance_matrix = self._build_admittance_matrix()
     
     def __repr__(self) -> str:
-        return f"Transformer(name={self.name!r}, bus1={self.bus1!r}, bus2={self.bus2!r}, r={self._r}, x={self._x})"
+        return f"Transformer(name={self.name!r}, bus1_name={self.bus1_name!r}, bus2_name={self.bus2_name!r}, r={self._r}, x={self._x})"
     
     def __str__(self) -> str:
-        return (f"Transformer '{self.name}': {self.bus1} <-> {self.bus2}\n"
+        return (f"Transformer '{self.name}': {self.bus1_name} <-> {self.bus2_name}\n"
                 f"  Impedance: R={self._r:.6f}, X={self._x:.6f}\n"
                 f"  Admittance: G={self._g:.6f}, B={self._b:.6f}\n"
                 f"  Admittance Matrix:\n{self._admittance_matrix}")
@@ -90,17 +90,17 @@ class Transformer:
         # Initialize DataFrame with bus names
         matrix = pd.DataFrame(
             np.zeros((2, 2), dtype=complex),
-            index=[self.bus1, self.bus2],
-            columns=[self.bus1, self.bus2]
+            index=[self.bus1_name, self.bus2_name],
+            columns=[self.bus1_name, self.bus2_name]
         )
         
         # Fill diagonal: sum of admittances connected to each bus
-        matrix.loc[self.bus1, self.bus1] = y_complex
-        matrix.loc[self.bus2, self.bus2] = y_complex
+        matrix.loc[self.bus1_name, self.bus1_name] = y_complex
+        matrix.loc[self.bus2_name, self.bus2_name] = y_complex
         
         # Fill off-diagonal: negative admittance between buses
-        matrix.loc[self.bus1, self.bus2] = -y_complex
-        matrix.loc[self.bus2, self.bus1] = -y_complex
+        matrix.loc[self.bus1_name, self.bus2_name] = -y_complex
+        matrix.loc[self.bus2_name, self.bus1_name] = -y_complex
         
         return matrix
 
@@ -155,7 +155,7 @@ def test_transformer():
     """Test transformer properties including admittance matrix."""
     
     # Basic instantiation and impedance/admittance calculations
-    t = Transformer(name="T1", bus1="BusA", bus2="BusB", r=0.02, x=0.04)
+    t = Transformer(name="T1", bus1_name="BusA", bus2_name="BusB", r=0.02, x=0.04)
     z_sq = 0.02**2 + 0.04**2
     assert t.r == 0.02
     assert t.x == 0.04
@@ -171,11 +171,11 @@ def test_transformer():
     
     # Test admittance matrix values
     y_expected = t.g + 1j * t.b
-    ## matrix_np = matrix.values
-    assert abs(matrix.loc["BusA", "BusA"] - y_expected) < 1e-12
-    assert abs(matrix.loc["BusB", "BusB"] - y_expected) < 1e-12
-    assert abs(matrix.loc["BusA", "BusB"] + y_expected) < 1e-12
-    assert abs(matrix.loc["BusB", "BusA"] + y_expected) < 1e-12
+   
+    assert abs(matrix.values[0,0] - y_expected) < 1e-12
+    assert abs(matrix.values[1,1] - y_expected) < 1e-12
+    assert abs(matrix.values[0,1] + y_expected) < 1e-12
+    assert abs(matrix.values[1,0] + y_expected) < 1e-12
 
     # Test parameter updates trigger matrix rebuild
     t.r = 0.03
@@ -186,11 +186,11 @@ def test_transformer():
     
     # Verify matrix is updated
     y_expected2 = t.g + 1j * t.b
-    assert abs(complex(t.admittance_matrix.loc["BusA", "BusA"]) - y_expected2) < 1e-12
+    assert abs(t.admittance_matrix.values[0,0] - y_expected2) < 1e-12
 
     # Test validation
     try:
-        Transformer(name="T2", bus1="BusA", bus2="BusB", r=0.0, x=0.0)
+        Transformer(name="T2", bus1_name="BusA", bus2_name="BusB", r=0.0, x=0.0)
         assert False, "Expected ValueError for r=0 and x=0"
     except ValueError:
         pass
