@@ -155,7 +155,7 @@ class Circuit:
         if name in self._transmission_lines:
             raise ValueError(f"Transmission line '{name}' already exists in circuit")
 
-        from transmission_line import TransmissionLine
+        from transmissionline import TransmissionLine
         self._transmission_lines[name] = TransmissionLine(name, bus1_name, bus2_name, r, x)
 
     def add_generator(self, name: str, bus1_name: str,
