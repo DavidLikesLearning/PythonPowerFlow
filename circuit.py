@@ -5,7 +5,7 @@ import warnings
 
 from bus import Bus
 from transformer import Transformer
-from transmission_line import TransmissionLine
+from transmissionline import TransmissionLine
 from generator import Generator
 from load import Load
 
