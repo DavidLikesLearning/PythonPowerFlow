@@ -265,10 +265,15 @@ def test_str_repr():
     print(f"✓ __repr__: {repr(circuit)}")
     print(f"✓ __str__: {str(circuit)}")
 
+def say_hi():
+    """Says hi."""
+    circuit = Circuit("My Circuit")
+    print  ('hi')
 
 if __name__ == "__main__":
     print("Running Circuit class tests...\n")
     test_circuit_creation()
+    say_hi()
     test_empty_name_rejected()
     test_attribute_initialization()
     test_duplicate_component_rejected()
