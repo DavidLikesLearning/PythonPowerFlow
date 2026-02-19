@@ -171,6 +171,7 @@ def test_transformer():
     
     # Test admittance matrix values
     y_expected = t.g + 1j * t.b
+    ## matrix_np = matrix.values
     assert abs(matrix.loc["BusA", "BusA"] - y_expected) < 1e-12
     assert abs(matrix.loc["BusB", "BusB"] - y_expected) < 1e-12
     assert abs(matrix.loc["BusA", "BusB"] + y_expected) < 1e-12
