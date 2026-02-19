@@ -271,6 +271,7 @@ if __name__ == "__main__":
     test_circuit_creation()
     test_empty_name_rejected()
     test_attribute_initialization()
+    test_add_generator()
     test_duplicate_component_rejected()
     test_str_repr()
     print("\n✅ All Circuit class tests passed!")
