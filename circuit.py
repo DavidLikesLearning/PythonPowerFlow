@@ -1,6 +1,15 @@
 # circuit.py
 from __future__ import annotations
+from typing import Dict
 import warnings
+
+from bus import Bus
+from transformer import Transformer
+from transmission_line import TransmissionLine
+from generator import Generator
+from load import Load
+
+
 class Circuit:
     """
     Circuit class for power system network modeling.
@@ -35,11 +44,13 @@ class Circuit:
             raise warnings.warn("Circuit name is stripped in processing. Avoid blank spaces in beginning and end of `name`.")
 
         self._name = name.strip()
-        self._buses = {}
-        self._transformers = {}
-        self._transmission_lines = {}
-        self._generators = {}
-        self._loads = {}
+        self._buses : Dict[str, Bus] = {}
+        self._transformers : Dict[str, Transformer] = {}
+        self._transmission_lines : Dict[str, TransmissionLine] = {}
+        self._generators : Dict[str, Generator] = {}
+        self._loads: Dict[str, Load] = {}
+
+
 
     def __repr__(self) -> str:
         """Return unambiguous representation of Circuit."""
@@ -239,6 +250,13 @@ def test_duplicate_component_rejected():
     except ValueError as e:
         assert "already exists" in str(e)
         print("✓ Duplicate component rejection test passed")
+        
+def test_add_generator():
+    """
+
+    Returns:
+
+    """
 
 
 def test_str_repr():
