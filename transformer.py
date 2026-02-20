@@ -9,9 +9,9 @@ class Transformer:
     ----------
     name : str
         Transformer identifier.
-    bus1 : str
+    bus1_name : str
         Connected bus name on side 1.
-    bus2 : str
+    bus2_name : str
         Connected bus name on side 2.
     r : float
         Series resistance (pu or ohms, consistent with system base).
