@@ -41,7 +41,7 @@ class Circuit:
             raise ValueError("name must be a non-empty string")
 
         if name != name.strip():
-            raise warnings.warn("Circuit name is stripped in processing. Avoid blank spaces in beginning and end of `name`.")
+            warnings.warn("Circuit name is stripped in processing. Avoid blank spaces in beginning and end of `name`.")
 
         self._name = name.strip()
         self._buses : Dict[str, Bus] = {}
