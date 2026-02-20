@@ -48,10 +48,10 @@ class Transformer:
         self._admittance_matrix = self._build_admittance_matrix()
     
     def __repr__(self) -> str:
-        return f"Transformer(name={self.name!r}, bus1={self.bus1!r}, bus2={self.bus2!r}, r={self._r}, x={self._x})"
+        return f"Transformer(name={self.name!r}, bus1_name={self.bus1_name!r}, bus2_name={self.bus2_name!r}, r={self._r}, x={self._x})"
     
     def __str__(self) -> str:
-        return (f"Transformer '{self.name}': {self.bus1} <-> {self.bus2}\n"
+        return (f"Transformer '{self.name}': {self.bus1_name} <-> {self.bus2_name}\n"
                 f"  Impedance: R={self._r:.6f}, X={self._x:.6f}\n"
                 f"  Admittance: G={self._g:.6f}, B={self._b:.6f}\n"
                 f"  Admittance Matrix:\n{self._admittance_matrix}")
@@ -171,11 +171,11 @@ def test_transformer():
     
     # Test admittance matrix values
     y_expected = t.g + 1j * t.b
-    ## matrix_np = matrix.values
-    assert abs(matrix.loc["BusA", "BusA"] - y_expected) < 1e-12
-    assert abs(matrix.loc["BusB", "BusB"] - y_expected) < 1e-12
-    assert abs(matrix.loc["BusA", "BusB"] + y_expected) < 1e-12
-    assert abs(matrix.loc["BusB", "BusA"] + y_expected) < 1e-12
+   
+    assert abs(matrix.values[0,0] - y_expected) < 1e-12
+    assert abs(matrix.values[1,1] - y_expected) < 1e-12
+    assert abs(matrix.values[0,1] + y_expected) < 1e-12
+    assert abs(matrix.values[1,0] + y_expected) < 1e-12
 
     # Test parameter updates trigger matrix rebuild
     t.r = 0.03
@@ -186,7 +186,7 @@ def test_transformer():
     
     # Verify matrix is updated
     y_expected2 = t.g + 1j * t.b
-    assert abs(complex(t.admittance_matrix.loc["BusA", "BusA"]) - y_expected2) < 1e-12
+    assert abs(t.admittance_matrix.values[0,0] - y_expected2) < 1e-12
 
     # Test validation
     try:
