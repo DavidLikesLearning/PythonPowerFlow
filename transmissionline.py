@@ -20,15 +20,16 @@ class TransmissionLine:
         g: Series conductance (siemens), computed as r / (r^2 + x^2).
     """
 
-    def __init__(self, name: str, bus1_name: str, bus2_name: str, r: float, x: float) -> None:
+    def __init__(self, name: str, bus1_name: str, bus2_name: str,
+                 r: float, x: float, b_shunt: float=0, g_shunt:float=0) -> None:
         self._name = name
         self._bus1_name = bus1_name
         self._bus2_name = bus2_name
-        self._r = r
-        self._x = x
-        self._validate_params(name, bus1_name, bus2_name, r, x)
-        self._g = self.calc_g()
-        self._b = self.calc_b()
+        self._r = r # series
+        self._x = x # series
+        self._g = g_shunt # shunt
+        self._b = b_shunt # shunt
+        self._validate_params()
         self._admittance_matrix = self._build_admittance_matrix()
 
 
@@ -48,28 +49,18 @@ class TransmissionLine:
             f"({self._bus1_name} ↔ {self._bus2_name}): "
             f"r={self._r} Ω, x={self._x} Ω, g={self._g:.6f} S"
         )
-    def _validate_params(self,name:str, bus1_name:str, bus2_name:str,
-                         r: float, x: float) -> None:
-        if (not isinstance(name, str) or
-                not isinstance(bus1_name, str) or
-                    not isinstance(bus2_name, str)):
+    def _validate_params(self) -> None:
+        if (not isinstance(self.name, str) or
+                not isinstance(self.bus1_name, str) or
+                    not isinstance(self.bus2_name, str)):
             raise ValueError("name must be a non-empty string")
-        if name == "" or bus1_name == "" or bus2_name == "":
+        if self.name == "" or self.bus1_name == "" or self.bus2_name == "":
             raise ValueError("name must be a non-empty string")
-        if r < 0 or x < 0:
-            raise ValueError("r and x must be non-negative.")
-        if r == 0 and x == 0:
+        if self.r < 0 or self.x < 0 or self._g < 0 or self._b < 0:
+            raise ValueError("r, x, b_shunt, g_shunt must be non-negative.")
+        if self.r == 0 and self.x == 0:
             raise ValueError("r and x cannot both be zero.")
 
-    def calc_g(self) -> float:
-        """Return conductance g based on current r and x."""
-        z_squared = self._r ** 2 + self._x ** 2
-        return self._r / z_squared
-
-    def calc_b(self) -> float:
-        """Return susceptance b based on current r and x."""
-        z_squared = self._r ** 2 + self._x ** 2
-        return -self._x / z_squared
 
     def _build_admittance_matrix(self) -> pd.DataFrame:
         """
@@ -82,8 +73,8 @@ class TransmissionLine:
             Diagonal elements: complex admittance Y = g + jb
             Off-diagonal elements: -Y
         """
-        # Complex admittance: Y = g + jb = 1/(r + jx)
-        y_complex = self._g + 1j * self._b
+        # Complex admittance: Y = 1/(r + jx)
+        y_complex = 1/(self._r + 1j*self._x)
 
         # Initialize DataFrame with bus names
         matrix = pd.DataFrame(
@@ -93,8 +84,8 @@ class TransmissionLine:
         )
 
         # Fill diagonal: sum of admittances connected to each bus
-        matrix.loc[self.bus1_name, self.bus1_name] = y_complex +1j*self.calc_g()/2
-        matrix.loc[self.bus2_name, self.bus2_name] = y_complex +1j*self.calc_g()/2
+        matrix.loc[self.bus1_name, self.bus1_name] = y_complex +1j*self._b/2
+        matrix.loc[self.bus2_name, self.bus2_name] = y_complex +1j*self._b/2
 
         # Fill off-diagonal: negative admittance between buses
         matrix.loc[self.bus1_name, self.bus2_name] = -y_complex
@@ -152,11 +143,11 @@ class TransmissionLine:
         return self._r
 
     @r.setter
-    def r(self, value: float) -> None:
-        value = float(value)
-        if value < 0:
-            raise ValueError("r must be >= 0")
+    def r(self, value: float):
+        """Set resistance and update derived admittance and matrix."""
         self._r = value
+        self._validate_params()
+        self._admittance_matrix = self._build_admittance_matrix()
 
     # --- x ---
     @property
@@ -165,31 +156,29 @@ class TransmissionLine:
 
     @x.setter
     def x(self, value: float) -> None:
-        value = float(value)
-        # Allow negative x if you want to model capacitive series reactance.
         self._x = value
-
+        self._validate_params()
+        self._admittance_matrix = self._build_admittance_matrix()
     # --- g (computed, read-only) ---
+
     @property
     def g(self) -> float:
-        denom = (self.r ** 2) + (self.x ** 2)
-        if denom == 0:
-            raise ZeroDivisionError("g is undefined when r == 0 and x == 0")
-        return self._r / denom
+        return self._g
+    @g.setter
+    def g(self, value: float) -> None:
+        self._g = value
+        self._validate_params()
+        self._admittance_matrix = self._build_admittance_matrix()
 
-def test_g_computation_basic():
-    line = TransmissionLine("L1", "BUS1", "BUS2", r=1.0, x=1.0)
-    assert math.isclose(line.g, 0.5, rel_tol=0, abs_tol=1e-12)
+    @property
+    def b(self) -> float:
+        return self._b
 
-def test_g_updates_when_r_changes():
-    line = TransmissionLine("L1", "BUS1", "BUS2", r=1.0, x=1.0)
-    line.r = 2.0
-    assert math.isclose(line.g, 2.0 / (4.0 + 1.0), rel_tol=0, abs_tol=1e-12)
-
-def test_g_updates_when_x_changes():
-    line = TransmissionLine("L1", "BUS1", "BUS2", r=2.0, x=1.0)
-    line.x = 3.0
-    assert math.isclose(line.g, 2.0 / (4.0 + 9.0), rel_tol=0, abs_tol=1e-12)
+    @b.setter
+    def b(self, value: float) -> None:
+        self._b = value
+        self._validate_params()
+        self._admittance_matrix = self._build_admittance_matrix()
 
 def test_invalid_name_rejected():
     with pytest.raises(ValueError):
@@ -199,63 +188,62 @@ def test_negative_r_rejected():
     with pytest.raises(ValueError):
         TransmissionLine("L1", "BUS1", "BUS2", r=-0.1, x=1.0)
 
-def test_g_undefined_when_r_and_x_zero():
+def test_undefined_when_r_and_x_zero():
     with pytest.raises(ValueError):
         line = TransmissionLine("L1", "BUS1", "BUS2", r=0.0, x=0.0)
-        _ = line.g
+        assert False, f"Should be undefined when r == 0 and x == 0"
 #---------------------------------------------------------------------------#
 # admittance_matrix tests
 #---------------------------------------------------------------------------#
 
-def test_yprim_returns_dataframe():
+def test_y_matrix_returns_dataframe():
     line1 = TransmissionLine("Line 1", "Bus 1", "Bus 2",
                              r=0.02, x=0.25)
-    yprim = line1.admittance_matrix
-    assert isinstance(yprim, pd.DataFrame), "calc_yprim() should return a pd.DataFrame"
+    y_matrix = line1.admittance_matrix
+    assert isinstance(y_matrix, pd.DataFrame), "calc_y_matrix() should return a pd.DataFrame"
 
-def test_yprim_shape():
+def test_y_matrix_shape():
     line1 = TransmissionLine("Line 1", "Bus 1", "Bus 2",
                              r=0.02, x=0.25)
-    yprim = line1.admittance_matrix
-    assert yprim.shape == (2, 2), "admittance_matrix must be a 2x2 matrix"
+    y_matrix = line1.admittance_matrix
+    assert y_matrix.shape == (2, 2), "admittance_matrix must be a 2x2 matrix"
 
-def test_yprim_bus_labels():
+def test_y_matrix_bus_labels():
     line1 = TransmissionLine("Line 1", "Bus 1", "Bus 2",
                              r=0.02, x=0.25)
-    yprim = line1.admittance_matrix
-    assert list(yprim.index)   == ["Bus 1", "Bus 2"]
-    assert list(yprim.columns) == ["Bus 1", "Bus 2"]
+    y_matrix = line1.admittance_matrix
+    assert list(y_matrix.index)   == ["Bus 1", "Bus 2"]
+    assert list(y_matrix.columns) == ["Bus 1", "Bus 2"]
 
-def test_yprim_diagonal_elements():
+def test_y_matrix_diagonal_elements():
     """
     Each diagonal element should equal Yseries + Yshunt/2
     (pi-model: half the shunt at each end).
     """
     line1 = TransmissionLine("Line 1", "Bus 1", "Bus 2",
-                             r=0.02, x=0.25)
-    yprim = line1.admittance_matrix
-    expected_diag = 1/(line1.r+1j*line1.x) + 1j*line1.r /(line1.x**2+line1.r**2) *1/2
-    assert math.isclose(yprim.loc["Bus 1", "Bus 1"].real, expected_diag.real, rel_tol=1e-7)
-    assert math.isclose(yprim.loc["Bus 1", "Bus 1"].imag, expected_diag.imag, rel_tol=1e-7)
-    assert math.isclose(yprim.loc["Bus 2", "Bus 2"].real, expected_diag.real, rel_tol=1e-7)
-    assert math.isclose(yprim.loc["Bus 2", "Bus 2"].imag, expected_diag.imag, rel_tol=1e-7)
+                             r=0.02, x=0.25, b_shunt = .03)
+    y_matrix = line1.admittance_matrix
+    expected_diag = 1/(line1.r+1j*line1.x) + 1j*.03 *1/2
+    assert math.isclose(y_matrix.loc["Bus 1", "Bus 1"].real, expected_diag.real, rel_tol=1e-7)
+    assert math.isclose(y_matrix.loc["Bus 1", "Bus 1"].imag, expected_diag.imag, rel_tol=1e-7)
+    assert math.isclose(y_matrix.loc["Bus 2", "Bus 2"].real, expected_diag.real, rel_tol=1e-7)
+    assert math.isclose(y_matrix.loc["Bus 2", "Bus 2"].imag, expected_diag.imag, rel_tol=1e-7)
 
-def test_yprim_off_diagonal_elements():
+def test_y_matrix_off_diagonal_elements():
     """Off-diagonal elements should equal -Yseries."""
     line1 = TransmissionLine("Line 1", "Bus 1", "Bus 2",
-                             r=0.02, x=0.25)
-    yprim = line1.admittance_matrix
+                             r=0.02, x=0.25, b_shunt = .03)
+    y_matrix = line1.admittance_matrix
     expected_off = -1/(line1.r+1j*line1.x)
-    assert math.isclose(yprim.loc["Bus 1", "Bus 2"].real, expected_off.real, rel_tol=1e-9)
-    assert math.isclose(yprim.loc["Bus 1", "Bus 2"].imag, expected_off.imag, rel_tol=1e-9)
-    assert math.isclose(yprim.loc["Bus 2", "Bus 1"].real, expected_off.real, rel_tol=1e-9)
-    assert math.isclose(yprim.loc["Bus 2", "Bus 1"].imag, expected_off.imag, rel_tol=1e-9)
+    print('\nAdmittance Matrix:\n',y_matrix)
+    assert math.isclose(y_matrix.loc["Bus 1", "Bus 2"].real, expected_off.real, rel_tol=1e-9)
+    assert math.isclose(y_matrix.loc["Bus 1", "Bus 2"].imag, expected_off.imag, rel_tol=1e-9)
+    assert math.isclose(y_matrix.loc["Bus 2", "Bus 1"].real, expected_off.real, rel_tol=1e-9)
+    assert math.isclose(y_matrix.loc["Bus 2", "Bus 1"].imag, expected_off.imag, rel_tol=1e-9)
 
 if __name__ == "__main__":
-    test_g_computation_basic()
-    test_g_updates_when_r_changes()
-    test_g_updates_when_x_changes()
     test_invalid_name_rejected()
     test_negative_r_rejected()
-    test_g_undefined_when_r_and_x_zero()
+    test_undefined_when_r_and_x_zero()
+
     print("Congratulations :D\nTransmission tests passed.")
