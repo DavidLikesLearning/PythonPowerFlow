@@ -9,6 +9,9 @@ from transmissionline import TransmissionLine
 from generator import Generator
 from load import Load
 
+import numpy as np
+import pandas as pd
+
 
 class Circuit:
     """
@@ -49,6 +52,8 @@ class Circuit:
         self._transmission_lines : Dict[str, TransmissionLine] = {}
         self._generators : Dict[str, Generator] = {}
         self._loads: Dict[str, Load] = {}
+        self._bus_index: Dict[str, int] = {}
+        self._y_bus = self.build_y_bus()
 
 
 
@@ -107,6 +112,51 @@ class Circuit:
         return self._loads
 
     # --- Add methods ---
+    def build_y_bus(self) -> pd.DataFrame:
+        """
+        Build the Y-bus matrix and bus_index mapping from the current buses
+        and network elements.
+
+        - Diagonal (i,i): sum of all admittances connected to bus i
+          (including shunts from line π-models).
+        - Off-diagonal (i,j): admittance between buses i and j if a connection
+          exists, else 0. With TransmissionLine, this is the usual negative
+          series admittance.
+        """
+        # No buses: empty Y-bus
+        if not self.buses:
+            self._bus_index = {}
+            self._y_bus = pd.DataFrame(dtype=complex)
+            return self._y_bus
+
+        # Define a deterministic bus order (current dict order)
+        bus_names = list(self.buses.keys())  # relies on Python 3.7+ ordered dicts
+        self._bus_index = {name: idx for idx, name in enumerate(bus_names)}
+
+        n = len(bus_names)
+        Y = np.zeros((n, n), dtype=complex)
+
+        # Stamp all transmission lines
+
+        for line in ( list(self.transmission_lines.values())+
+                list(self.transformers.values()) ):
+            y2 = line.admittance_matrix  # 2x2 DataFrame indexed by [bus1name, bus2name] [file:1]
+            b1 = line.bus1_name
+            b2 = line.bus2_name
+
+            i = self._bus_index[b1]
+            j = self._bus_index[b2]
+
+            # Stamp 2x2 block
+            Y[i, i] += y2.loc[b1, b1]
+            Y[i, j] += y2.loc[b1, b2]
+            Y[j, i] += y2.loc[b2, b1]
+            Y[j, j] += y2.loc[b2, b2]
+
+        self._y_bus = pd.DataFrame(Y, index=bus_names, columns=bus_names)
+        return self._y_bus
+
+
     def add_bus(self, name: str, nominal_kv: float) -> None:
         """
         Add a bus to the circuit.
@@ -145,6 +195,7 @@ class Circuit:
             raise ValueError(f"{bus1_name} and {bus2_name} are not both in circuit")
 
         self._transformers[name] = Transformer(name, bus1_name, bus2_name, r, x)
+        self._y_bus = self.build_y_bus()
 
     def add_transmission_line(self, name: str, bus1_name: str, bus2_name: str,
                               r: float, x: float) -> None:
@@ -168,6 +219,7 @@ class Circuit:
         if bus1_name not in self._buses or bus2_name not in self._buses:
             raise ValueError(f"{bus1_name} and {bus2_name} are not both in circuit")
         self._transmission_lines[name] = TransmissionLine(name, bus1_name, bus2_name, r, x)
+        self._y_bus = self.build_y_bus()
 
     def add_generator(self, name: str, bus_name: str,
                       voltage_setpoint: float, mw_setpoint: float) -> None:
