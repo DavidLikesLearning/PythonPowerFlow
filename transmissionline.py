@@ -21,14 +21,14 @@ class TransmissionLine:
     """
 
     def __init__(self, name: str, bus1_name: str, bus2_name: str,
-                 r: float, x: float, b_shunt: float=0, g_shunt:float=0) -> None:
+                 r: float, x: float, b: float=0, g:float=0) -> None:
         self._name = name
         self._bus1_name = bus1_name
         self._bus2_name = bus2_name
         self._r = r # series
         self._x = x # series
-        self._g = g_shunt # shunt
-        self._b = b_shunt # shunt
+        self._g = g # shunt
+        self._b = b # shunt
         self._validate_params()
         self._admittance_matrix = self._build_admittance_matrix()
 
