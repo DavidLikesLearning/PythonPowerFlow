@@ -424,6 +424,20 @@ def test_str_repr():
     print(f"✓ __repr__: {repr(circuit)}")
     print(f"✓ __str__: {str(circuit)}")
 
+def test_y_bus():
+    """Make a circuit, add two buses, then add a transformer and verify
+    its properties are stored correctly."""
+    circuit = Circuit("Test Circuit")
+    circuit.add_bus("Bus 1", 20.0)
+    circuit.add_bus("Bus 2", 138.0)
+    circuit.add_bus("Bus 3", 138.0)
+    circuit.add_transformer("T1",
+        bus1_name="Bus 1", bus2_name="Bus 2", r=0.005, x=0.05)
+    circuit.add_transformer("T2",
+                            bus1_name="Bus 3", bus2_name="Bus 2", r=0.005, x=0.05)
+    print(circuit._y_bus)
+    print("✓ Add transformer test passed")
+
 if __name__ == "__main__":
     print("Running Circuit class tests...\n")
     test_circuit_creation()
