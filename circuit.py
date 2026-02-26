@@ -424,6 +424,21 @@ def test_str_repr():
     print(f"✓ __repr__: {repr(circuit)}")
     print(f"✓ __str__: {str(circuit)}")
 
+def test_build_5bus_example():
+    """Build the 5-bus example from the Power System Analysis book and
+    print the Y-bus matrix."""
+    circuit = Circuit("5-Bus Example")
+    circuit.add_bus("One", 15.0)
+    circuit.add_bus("Two", 345.0)
+    circuit.add_bus("Three", 15.0)
+    circuit.add_bus("Four", 345.0)
+    circuit.add_bus("Five", 345.0)
+
+    circuit.add_transmission_line("Line 4-2", "Four", "Two", r=0.009, x=0.1,  b=1.72)
+    circuit.add_transmission_line("Line 1-3", "Five", "Two", r=0.0045, x=0.05,b=0.88)
+    circuit.add_transmission_line("Line 2-3", "Five", "Four", r=0.00225, x=0.025, b=0.44)
+    
+
 def test_y_bus():
     """Make a circuit, add two buses, then add a transformer and verify
     its properties are stored correctly."""
