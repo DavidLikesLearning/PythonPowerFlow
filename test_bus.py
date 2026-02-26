@@ -23,3 +23,4 @@ def test_bus():
     assert bus1.v == 115.0, "Voltage should be updated to 115.0 V"
     
     print("All tests passed for Bus class!")
+
