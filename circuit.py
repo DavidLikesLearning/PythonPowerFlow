@@ -175,7 +175,7 @@ class Circuit:
         self._buses[name] = Bus(name, nominal_kv)
 
     def add_transformer(self, name: str, bus1_name: str, bus2_name: str,
-                        r: float, x: float) -> None:
+                        r: float, x: float, g:float=0, b:float=0) -> None:
         """
         Add a transformer to the circuit.
 
@@ -185,6 +185,8 @@ class Circuit:
             bus2_name: Secondary bus name.
             r: Series resistance.
             x: Series reactance.
+            g: Shunt conductance
+            b: Shunt susceptance
 
         Raises:
             ValueError: If a transformer with the same name already exists.
@@ -194,11 +196,11 @@ class Circuit:
         if bus1_name not in self._buses or bus2_name not in self._buses:
             raise ValueError(f"{bus1_name} and {bus2_name} are not both in circuit")
 
-        self._transformers[name] = Transformer(name, bus1_name, bus2_name, r, x)
+        self._transformers[name] = Transformer(name, bus1_name, bus2_name, r, x, g, b)
         self._y_bus = self.build_y_bus()
 
     def add_transmission_line(self, name: str, bus1_name: str, bus2_name: str,
-                              r: float, x: float) -> None:
+                              r: float, x: float, g:float=0, b:float=0) -> None:
         """
         Add a transmission line to the circuit.
 
@@ -218,7 +220,7 @@ class Circuit:
             raise ValueError(f"Transmission line '{name}' already exists in circuit")
         if bus1_name not in self._buses or bus2_name not in self._buses:
             raise ValueError(f"{bus1_name} and {bus2_name} are not both in circuit")
-        self._transmission_lines[name] = TransmissionLine(name, bus1_name, bus2_name, r, x)
+        self._transmission_lines[name] = TransmissionLine(name, bus1_name, bus2_name, r, x, g, b)
         self._y_bus = self.build_y_bus()
 
     def add_generator(self, name: str, bus_name: str,
