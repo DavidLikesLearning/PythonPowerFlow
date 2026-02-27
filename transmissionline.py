@@ -84,8 +84,8 @@ class TransmissionLine:
         )
 
         # Fill diagonal: sum of admittances connected to each bus
-        matrix.loc[self.bus1_name, self.bus1_name] = y_complex +1j*self._b/2
-        matrix.loc[self.bus2_name, self.bus2_name] = y_complex +1j*self._b/2
+        matrix.loc[self.bus1_name, self.bus1_name] = y_complex +1j*self._b/2.0
+        matrix.loc[self.bus2_name, self.bus2_name] = y_complex +1j*self._b/2.0
 
         # Fill off-diagonal: negative admittance between buses
         matrix.loc[self.bus1_name, self.bus2_name] = -y_complex
@@ -96,7 +96,7 @@ class TransmissionLine:
     @property
     def admittance_matrix(self) -> pd.DataFrame:
         """
-        Get the 2x2 admittance matrix for this transformer.
+        Get the 2x2 admittance matrix for this transmission line.
 
         Returns
         -------
@@ -215,35 +215,36 @@ def test_y_matrix_bus_labels():
     assert list(y_matrix.index)   == ["Bus 1", "Bus 2"]
     assert list(y_matrix.columns) == ["Bus 1", "Bus 2"]
 
-def test_y_matrix_diagonal_elements():
+def test_y_matrix_elements():
     """
     Each diagonal element should equal Yseries + Yshunt/2
     (pi-model: half the shunt at each end).
     """
     line1 = TransmissionLine("Line 1", "Bus 1", "Bus 2",
-                             r=0.02, x=0.25, b_shunt = .03)
+                             r=0.02, x=0.25, b = .03)
     y_matrix = line1.admittance_matrix
-    expected_diag = 1/(line1.r+1j*line1.x) + 1j*.03 *1/2
-    assert math.isclose(y_matrix.loc["Bus 1", "Bus 1"].real, expected_diag.real, rel_tol=1e-7)
-    assert math.isclose(y_matrix.loc["Bus 1", "Bus 1"].imag, expected_diag.imag, rel_tol=1e-7)
-    assert math.isclose(y_matrix.loc["Bus 2", "Bus 2"].real, expected_diag.real, rel_tol=1e-7)
-    assert math.isclose(y_matrix.loc["Bus 2", "Bus 2"].imag, expected_diag.imag, rel_tol=1e-7)
+    expected_element = 1/(line1.r+1j*line1.x) + 1j*.03 *1/2
+    assert y_matrix.values[0,0] - expected_element < 1e-7, f"Expected {expected_element}, got {y_matrix.values[0,0]}"
+    assert y_matrix.values[1,1] - expected_element < 1e-7, f"Expected {expected_element}, got {y_matrix.values[1,1]}"
+    assert y_matrix.values[0,1] + expected_element < 1e-7, f"Expected {-expected_element}, got {y_matrix.values[0,1]}"
+    assert y_matrix.values[1,0] + expected_element < 1e-7, f"Expected {-expected_element}, got {y_matrix.values[1,0]}"
 
 def test_y_matrix_off_diagonal_elements():
     """Off-diagonal elements should equal -Yseries."""
     line1 = TransmissionLine("Line 1", "Bus 1", "Bus 2",
-                             r=0.02, x=0.25, b_shunt = .03)
+                             r=0.02, x=0.25, b = .03)
     y_matrix = line1.admittance_matrix
-    expected_off = -1/(line1.r+1j*line1.x)
+    expected_off = 1/(line1.r+1j*line1.x)
     print('\nAdmittance Matrix:\n',y_matrix)
-    assert math.isclose(y_matrix.loc["Bus 1", "Bus 2"].real, expected_off.real, rel_tol=1e-9)
-    assert math.isclose(y_matrix.loc["Bus 1", "Bus 2"].imag, expected_off.imag, rel_tol=1e-9)
-    assert math.isclose(y_matrix.loc["Bus 2", "Bus 1"].real, expected_off.real, rel_tol=1e-9)
-    assert math.isclose(y_matrix.loc["Bus 2", "Bus 1"].imag, expected_off.imag, rel_tol=1e-9)
+    assert y_matrix.values[0,0] - expected_off < 1e-7, f"Expected {expected_off}, got {y_matrix.values[0,0]}"
+    assert y_matrix.values[1,1] - expected_off < 1e-7, f"Expected {expected_off}, got {y_matrix.values[1,1]}"
+   
 
 if __name__ == "__main__":
     test_invalid_name_rejected()
     test_negative_r_rejected()
     test_undefined_when_r_and_x_zero()
+    test_y_matrix_elements()
+    test_y_matrix_off_diagonal_elements()
 
-    print("Congratulations :D\nTransmission tests passed.")
+    print("Congratulations 👌\nTransmission tests passed.")

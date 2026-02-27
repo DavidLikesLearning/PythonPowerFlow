@@ -1,0 +1,55 @@
+import pandas as pd
+import numpy as np
+
+def safe_complex(s):
+    s = s.strip()
+    if s == "0":
+        return 0j
+    if 'j' in s and not s.endswith('j'):
+        s = s.replace('j', '')
+        for i in range(len(s)-1, 0, -1):
+            if s[i] in '+-':
+                s = s[:i] + s[i:] + 'j'
+                break
+    return complex(s)
+
+# Load the Y-bus matrix from the CSV file
+csv_path = "variable_names_5bus example.csv"
+columns = pd.read_csv(csv_path, nrows=0).columns[1:]
+converters = {col: safe_complex for col in columns}
+df_expected = pd.read_csv(csv_path, index_col=0, converters=converters)
+
+# Create a matrix of values without the index column or header row
+expected_matrix = df_expected.values
+
+# Assuming circuit is an instance of Circuit and _y_bus is the Y-bus DataFrame
+# For demonstration, we will create a mock Circuit class to simulate this
+class MockCircuit:
+    def __init__(self):
+        self._y_bus = pd.DataFrame({
+            'YBus:1': [3.73 - 49.72j, 0, 0, 0, -3.73 + 49.72j],
+            'YBus:2': [0, 2.68 - 28.46j, 0, -0.89 + 9.92j, -1.79 + 19.84j],
+            'YBus:3': [0, 0, 7.46 - 99.44j, -7.46 + 99.44j, 0],
+            'YBus:4': [0, -0.89 + 9.92j, -7.46 + 99.44j, 11.92 - 147.96j, -3.57 + 39.68j],
+            'YBus:5': [-3.73 + 49.72j, -1.79 + 19.84j, 0, -3.57 + 39.68j, 9.09 - 108.58j]
+        })
+
+# Create an instance of the mock circuit
+circuit = MockCircuit()
+
+# Extract values from the _y_bus DataFrame without the index column and header row
+actual_matrix = circuit._y_bus.values
+
+# Ensure data types are comparable
+assert expected_matrix.dtype == actual_matrix.dtype, "Data types are not comparable"
+
+# Run a difference matrix to show the errors between both matrices
+difference_matrix = np.abs(expected_matrix - actual_matrix)
+
+# Print the results
+print("Expected Y-bus Matrix:")
+print(expected_matrix)
+print("\nActual Y-bus Matrix:")
+print(actual_matrix)
+print("\nDifference Matrix (Errors):")
+print(difference_matrix)
