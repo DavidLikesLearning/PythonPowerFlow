@@ -201,7 +201,7 @@ class Circuit:
         if bus1_name not in self._buses or bus2_name not in self._buses:
             raise ValueError(f"{bus1_name} and {bus2_name} are not both in circuit")
 
-        self._transformers[name] = Transformer(name, bus1_name, bus2_name, r, x, g, b)
+        self._transformers[name] = Transformer(name, bus1_name, bus2_name, r=r, x=x, g=g, b=b)
         self._y_bus = None  # invalidate Y-bus; call build_y_bus() to rebuild
 
     def add_transmission_line(self, name: str, bus1_name: str, bus2_name: str,
