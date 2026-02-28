@@ -204,6 +204,7 @@ def test_build_5bus_example():
 
     circuit.add_transformer("T15", "One", "Five", r=0.0015, x=0.02)
     circuit.add_transformer("T34", "Three", "Four", r=0.00075, x=0.01)
+    circuit.build_y_bus()
 
     # Load the expected Y-bus matrix from the CSV file
     csv_path = "variable_names_5bus example.csv"
@@ -215,14 +216,14 @@ def test_build_5bus_example():
     expected_matrix = df_expected.values
 
     # Align DataFrame indices and columns with circuit._y_bus
-    ybus_actual = circuit._y_bus.values
+    ybus_actual = circuit.y_bus.values
 
     # Ensure data types are comparable
     expected_matrix = expected_matrix.astype(np.complex128)
     ybus_actual = np.round(ybus_actual.astype(np.complex128), decimals=2)
 
     # Calculate the difference matrix
-    difference_matrix = expected_matrix - ybus_actual
+    difference_matrix = np.round(expected_matrix - ybus_actual, decimals=3)
     #df_expected = df_expected.reindex(index=ybus_actual.index, columns=ybus_actual.columns)
     print("\nDifference Matrix:")
     print(difference_matrix)
