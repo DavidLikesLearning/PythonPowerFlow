@@ -1,0 +1,75 @@
+classDiagram
+    class Bus {
+        - name: str
+        - bus_index: int
+        - nominal_kv: float
+        - v: float
+        + _set_voltage(value: float)
+        + reset_index_counter()
+    }
+
+    class Transformer {
+        - name: str
+        - bus1_name: str
+        - bus2_name: str
+        - r: float
+        - x: float
+        - g: float
+        - b: float
+        + admittance_matrix: pd.DataFrame
+    }
+
+    class TransmissionLine {
+        - name: str
+        - bus1_name: str
+        - bus2_name: str
+        - r: float
+        - x: float
+        - g: float
+        - b: float
+        + admittance_matrix: pd.DataFrame
+    }
+
+    class Load {
+        - name: str
+        - bus1_name: str
+        - mw: float
+        - mvar: float
+        + mva: float
+    }
+
+    class Generator {
+        - name: str
+        - bus_name: str
+        - mw_setpoint: float
+        - v_setpoint: float
+    }
+
+    class Circuit {
+        - name: str
+        - buses: dict
+        - transformers: dict
+        - transmission_lines: dict
+        - generators: dict
+        - loads: dict
+        - y_bus: pd.DataFrame
+        + add_bus()
+        + add_transformer()
+        + add_transmission_line()
+        + add_generator()
+        + add_load()
+        + calc_ybus()
+    }
+
+    Circuit "1" o-- "*" Bus : contains
+    Circuit "1" o-- "*" Transformer : contains
+    Circuit "1" o-- "*" TransmissionLine : contains
+    Circuit "1" o-- "*" Generator : contains
+    Circuit "1" o-- "*" Load : contains
+
+    Transformer "1" --> "1" Bus : bus1_name
+    Transformer "1" --> "1" Bus : bus2_name
+    TransmissionLine "1" --> "1" Bus : bus1_name
+    TransmissionLine "1" --> "1" Bus : bus2_name
+    Load "1" --> "1" Bus : bus1_name
+    Generator "1" --> "1" Bus : bus_name

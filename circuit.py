@@ -53,7 +53,7 @@ class Circuit:
         self._generators : Dict[str, Generator] = {}
         self._loads: Dict[str, Load] = {}
         self._bus_index: Dict[str, int] = {}
-        self._y_bus = self.build_y_bus()
+        self._y_bus: pd.DataFrame | None = None
 
 
 
@@ -111,10 +111,17 @@ class Circuit:
         """Get loads dictionary."""
         return self._loads
 
+    @property
+    def y_bus(self) -> pd.DataFrame:
+        """Get Y-bus matrix. Raises RuntimeError if build_y_bus() has not been called."""
+        if self._y_bus is None:
+            raise RuntimeError("Y-bus has not been built yet. Call build_y_bus() first.")
+        return self._y_bus
+
     # --- Add methods ---
-    def build_y_bus(self) -> pd.DataFrame:
+    def calc_ybus(self) -> pd.DataFrame:
         """
-        Build the Y-bus matrix and bus_index mapping from the current buses
+        Calculate the Y-bus matrix and bus_index mapping from the current buses
         and network elements.
 
         - Diagonal (i,i): sum of all admittances connected to bus i
@@ -136,10 +143,8 @@ class Circuit:
         n = len(bus_names)
         Y = np.zeros((n, n), dtype=complex)
 
-        # Stamp all transmission lines
-
-        for line in ( list(self.transmission_lines.values())+
-                list(self.transformers.values()) ):
+        for line in (list(self.transmission_lines.values()) +
+                list(self.transformers.values())):
             y2 = line.admittance_matrix  # 2x2 DataFrame indexed by [bus1name, bus2name] [file:1]
             b1 = line.bus1_name
             b2 = line.bus2_name
@@ -196,8 +201,8 @@ class Circuit:
         if bus1_name not in self._buses or bus2_name not in self._buses:
             raise ValueError(f"{bus1_name} and {bus2_name} are not both in circuit")
 
-        self._transformers[name] = Transformer(name, bus1_name, bus2_name, r, x, g, b)
-        self._y_bus = self.build_y_bus()
+        self._transformers[name] = Transformer(name, bus1_name, bus2_name, r=r, x=x, g=g, b=b)
+        self._y_bus = None  # invalidate Y-bus; call build_y_bus() to rebuild
 
     def add_transmission_line(self, name: str, bus1_name: str, bus2_name: str,
                               r: float, x: float, g:float=0, b:float=0) -> None:
@@ -220,8 +225,8 @@ class Circuit:
             raise ValueError(f"Transmission line '{name}' already exists in circuit")
         if bus1_name not in self._buses or bus2_name not in self._buses:
             raise ValueError(f"{bus1_name} and {bus2_name} are not both in circuit")
-        self._transmission_lines[name] = TransmissionLine(name, bus1_name, bus2_name, r, x, g, b)
-        self._y_bus = self.build_y_bus()
+        self._transmission_lines[name] = TransmissionLine(name, bus1_name, bus2_name, r=r, x=x, b=b, g=g)
+        self._y_bus = None  # invalidate Y-bus; call build_y_bus() to rebuild
 
     def add_generator(self, name: str, bus_name: str,
                       voltage_setpoint: float, mw_setpoint: float) -> None:
@@ -452,6 +457,7 @@ def test_y_bus():
         bus1_name="Bus 1", bus2_name="Bus 2", r=0.005, x=0.05)
     circuit.add_transformer("T2",
                             bus1_name="Bus 3", bus2_name="Bus 2", r=0.005, x=0.05)
+    circuit.calc_ybus()
     print(circuit._y_bus)
     print("✓ Add transformer test passed")
 
