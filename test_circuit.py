@@ -204,7 +204,7 @@ def test_build_5bus_example():
 
     circuit.add_transformer("T15", "One", "Five", r=0.0015, x=0.02)
     circuit.add_transformer("T34", "Three", "Four", r=0.00075, x=0.01)
-    circuit.build_y_bus()
+    circuit.calc_ybus()
 
     # Load the expected Y-bus matrix from the CSV file
     csv_path = "variable_names_5bus example.csv"
@@ -240,10 +240,11 @@ def test_y_bus():
     circuit.add_bus("Bus 1", 20.0)
     circuit.add_bus("Bus 2", 138.0)
     circuit.add_bus("Bus 3", 138.0)
-    circuit.add_transformer("T1",
-        bus1_name="Bus 1", bus2_name="Bus 2", r=0.005, x=0.05)
-    circuit.add_transformer("T2",
-                            bus1_name="Bus 3", bus2_name="Bus 2", r=0.005, x=0.05)
+    circuit.add_transformer("T12",
+        bus1_name="Bus 1", bus2_name="Bus 2", r=0.01, x=0.1)
+    circuit.add_transmission_line("Line 1",\
+        bus1_name="Bus 1", bus2_name="Bus 2", r=0.005, x=0.05,b=.04)
+    circuit.calc_ybus()
     print(circuit._y_bus)
     print("✓ Add transformer test passed")
     

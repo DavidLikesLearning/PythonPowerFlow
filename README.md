@@ -114,7 +114,7 @@ Represents a transformer modeled as a series impedance (no magnetizing branch). 
 
 **Primitive Admittance Matrix Structure:**
 
-```
+```markup
          bus1_name    bus2_name
 bus1_name   +Y          -Y
 bus2_name   -Y          +Y
@@ -155,7 +155,7 @@ Transmission line model using the π (pi) equivalent circuit. The shunt suscepta
 
 **Primitive Admittance Matrix Structure (π model):**
 
-```
+```markup
          bus1_name         bus2_name
 bus1_name   Y + jb/2          -Y
 bus2_name      -Y           Y + jb/2
@@ -197,20 +197,21 @@ Circuit class for power system network modeling. Serves as a container to assemb
 
 | Method | Description |
 |--------|-------------|
+
 | `add_bus(name, nominal_kv)` | Add a new bus to the circuit |
 | `add_transformer(name, bus1_name, bus2_name, r, x, g, b)` | Add a transformer between two existing buses |
 | `add_transmission_line(name, bus1_name, bus2_name, r, x, g, b)` | Add a transmission line between two existing buses |
 | `add_generator(name, bus_name, voltage_setpoint, mw_setpoint)` | Add a generator connected to an existing bus |
 | `add_load(name, bus1_name, mw, mvar)` | Add a load connected to an existing bus |
-| `build_y_bus()` | Build (or rebuild) the system Y-bus matrix from current circuit elements |
+| `calc_ybus()` | Calculate (or recalculate) the system Y-bus matrix from current circuit elements |
 
 **Notes & Warnings:**
 
 - `name` must be a non-empty string; `ValueError` is raised otherwise.
 - Adding duplicates for any component type raises a `ValueError`.
 - Adding a transformer or transmission line referencing buses not yet in the circuit raises a `ValueError`.
-- **`build_y_bus()` must be called after all elements are added** (or re-called after any modification) to get an up-to-date Y-bus matrix.
-- Adding or modifying any branch element (transformer or transmission line) after calling `build_y_bus()` will invalidate `_y_bus` — call `build_y_bus()` again to rebuild.
+- **`calc_ybus()` must be called after all elements are added** (or re-called after any modification) to get an up-to-date Y-bus matrix.
+- Adding or modifying any branch element (transformer or transmission line) after calling `calc_ybus()` will invalidate `_y_bus` — call `calc_ybus()` again to rebuild.
 
 **Example Usage:**
 
@@ -229,7 +230,7 @@ circuit.add_transmission_line("Line 1-2", "Bus 1", "Bus 2", r=0.02, x=0.25, b=0.
 circuit.add_transformer("T1", "Bus 3", "Bus 1", r=0.005, x=0.05)
 
 # Build Y-bus AFTER all elements are added
-circuit.build_y_bus()
+circuit.calc_ybus()
 print(circuit.y_bus)
 print(circuit)
 ```
@@ -292,10 +293,10 @@ The primitive admittance matrix captures the local electrical behavior of a sing
 
 3. **Result:** The final matrix is stored as a `pd.DataFrame` with bus names as both row and column labels, accessible via `circuit.y_bus`.
 
-### Important: When to Call `build_y_bus()`
+### Important: When to Call `calc_ybus()`
 
 > ⚠️ **`build_y_bus()` must be explicitly called after all circuit elements have been added.**  
-> Adding any new branch element after this call will invalidate the stored Y-bus (`_y_bus` is set to `None`). Call `build_y_bus()` again before using `y_bus`.
+> Adding any new branch element after this call will invalidate the stored Y-bus (`_y_bus` is set to `None`). Call `calc_ybus()` again before using `y_bus`.
 
 ```python
 # Correct workflow:
@@ -305,7 +306,7 @@ circuit.add_bus("Two", 345.0)
 circuit.add_transformer("T1", "One", "Two", r=0.0015, x=0.02)
 circuit.add_transmission_line("L1", "Two", "Three", r=0.009, x=0.1, b=1.72)
 
-circuit.build_y_bus()          # <-- Must call this to compute Y-bus
+circuit.calc_ybus()          # <-- Must call this to compute Y-bus
 print(circuit.y_bus)           # Safe to access after build
 ```
 
@@ -325,6 +326,6 @@ circuit.add_transmission_line("Line 5-4", "Five", "Four", r=0.00225, x=0.025, b=
 circuit.add_transformer("T1-5", "One",   "Five", r=0.0015,  x=0.02)
 circuit.add_transformer("T3-4", "Three", "Four", r=0.00075, x=0.01)
 
-circuit.build_y_bus()
+circuit.calc_ybus()
 print(circuit.y_bus)
 ```

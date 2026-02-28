@@ -119,9 +119,9 @@ class Circuit:
         return self._y_bus
 
     # --- Add methods ---
-    def build_y_bus(self) -> pd.DataFrame:
+    def calc_ybus(self) -> pd.DataFrame:
         """
-        Build the Y-bus matrix and bus_index mapping from the current buses
+        Calculate the Y-bus matrix and bus_index mapping from the current buses
         and network elements.
 
         - Diagonal (i,i): sum of all admittances connected to bus i
@@ -457,7 +457,7 @@ def test_y_bus():
         bus1_name="Bus 1", bus2_name="Bus 2", r=0.005, x=0.05)
     circuit.add_transformer("T2",
                             bus1_name="Bus 3", bus2_name="Bus 2", r=0.005, x=0.05)
-    circuit.build_y_bus()
+    circuit.calc_ybus()
     print(circuit._y_bus)
     print("✓ Add transformer test passed")
 
