@@ -1,5 +1,6 @@
-__pycache__/circuit.cpython-313.pyc
-__pycache__/circuit.cpython-313.pyc
-__pycache__/circuit.cpython-313.pyc
-__pycache__/circuit.cpython-313.pyc
-__pycache__/test_circuit.cpython-313-pytest-9.0.2.pyc
+dist/
+build/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
