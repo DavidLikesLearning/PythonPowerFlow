@@ -36,8 +36,6 @@ bus1._set_voltage(115.0)          # only called by a solver
 print(bus1.v)                      # 115.0
 ```
 
----
-
 ### Load
 
 Load model representing a power consumption element connected to a single bus.
@@ -66,8 +64,6 @@ print(load.mva)      # sqrt(36 + 16) ≈ 7.211
 print(load)
 ```
 
----
-
 ### Generator
 
 Generator model representing a power source connected to a single bus.
@@ -95,8 +91,6 @@ g.mw_setpoint = 150.0
 g.v_setpoint = None        # slack bus or no voltage control
 ```
 
----
-
 ### Transformer
 
 Represents a transformer modeled as a series impedance (no magnetizing branch). The admittance matrix is a 2×2 primitive admittance matrix used for stamping into the system Y-bus.
@@ -109,9 +103,6 @@ Represents a transformer modeled as a series impedance with optional shunt admit
 - `bus2_name` (non-empty str): Connected bus name on side 2 (must be a non-empty string).
 - `r` (float ≥ 0): Series resistance (pu or ohms, consistent with system base).
 - `x` (float ≥ 0): Series reactance (pu or ohms, consistent with system base).
-- `g` (float ≥ 0): Shunt conductance (default 0).
-- `b` (float ≥ 0): Shunt susceptance (default 0).
-- `admittance_matrix` (pd.DataFrame): 2×2 primitive admittance matrix with bus names as index and columns.
 
 **Primitive Admittance Matrix Structure:**
 
@@ -122,25 +113,23 @@ bus2_name   -Y          +Y
 ```
 
 Where `Y = 1 / (r + jx)` is the series admittance.
+
 - `r` (float): Series resistance (pu or ohms, consistent with system base).
 - `x` (float): Series reactance (pu or ohms, consistent with system base).
-- `g` (float, optional): Shunt conductance (siemens), default = 0.
-- `b` (float, optional): Shunt susceptance (siemens), default = 0.
 
 **Attributes:**
+
 - `name`: Transformer identifier.
 - `bus1_name`: Connected bus name on side 1.
 - `bus2_name`: Connected bus name on side 2.
 - `r`: Series resistance.
 - `x`: Series reactance.
-- `g`: Shunt conductance.
-- `b`: Shunt susceptance.
 - `admittance_matrix`: 2x2 pandas DataFrame representing the primitive Y-bus matrix for this transformer, with bus names as index and columns.
 
 **Primitive Y-bus Matrix:**
 The transformer's 2x2 primitive admittance (Y-bus) matrix is automatically computed from the series impedance:
+
 - Series admittance: `Y_series = 1 / (r + jx)`
-- Shunt admittance: `Y_shunt = g + jb`
 - Matrix structure:
   - `[bus1, bus1]` = `Y_series` (diagonal element for bus 1)
   - `[bus2, bus2]` = `Y_series` (diagonal element for bus 2)
@@ -149,10 +138,8 @@ The transformer's 2x2 primitive admittance (Y-bus) matrix is automatically compu
 
 **Notes & Warnings:**
 
-- `r`, `x`, `g`, and `b` must be non-negative; `ValueError` is raised otherwise.
+- `r` and `x` must be non-negative; `ValueError` is raised otherwise.
 - Both `r` and `x` cannot be zero simultaneously; `ValueError` is raised otherwise.
-- Setting any parameter (r, x, g, b) automatically rebuilds the admittance matrix.
-- The admittance matrix is automatically rebuilt when `r`, `x`, `g`, or `b` are modified.
 
 **Example Usage:**
 
@@ -162,8 +149,6 @@ print(t.admittance_matrix)
 print(t)
 t.r = 0.01               # admittance_matrix is automatically updated
 ```
-
----
 
 ### TransmissionLine
 
@@ -178,7 +163,6 @@ Transmission line model with π-model representation including shunt susceptance
 - `x` (float ≥ 0): Series reactance (ohms or pu).
 - `g` (float ≥ 0): Shunt conductance (default 0).
 - `b` (float ≥ 0): Total line charging susceptance — split as `b/2` at each end in the π model (default 0).
-- `admittance_matrix` (pd.DataFrame): 2×2 primitive admittance matrix with bus names as index and columns.
 
 **Primitive Admittance Matrix Structure (π model):**
 
@@ -189,12 +173,14 @@ bus2_name      -Y           Y + jb/2
 ```
 
 Where `Y = 1 / (r + jx)` is the series admittance.
+
 - `r` (float): Series resistance (ohms).
 - `x` (float): Series reactance (ohms).
 - `b_shunt` (float, optional): Total shunt susceptance (siemens), default = 0.
 - `g_shunt` (float, optional): Total shunt conductance (siemens), default = 0.
 
 **Attributes:**
+
 - `name`: Identifier for the line.
 - `bus1_name`: From-bus name.
 - `bus2_name`: To-bus name.
@@ -206,6 +192,7 @@ Where `Y = 1 / (r + jx)` is the series admittance.
 
 **Primitive Y-bus Matrix (π-model):**
 The transmission line's 2x2 primitive admittance (Y-bus) matrix incorporates the π-model with shunt elements:
+
 - Series admittance: `Y_series = 1 / (r + jx)`
 - Total shunt admittance: `Y_shunt = g_shunt + j*b_shunt`
 - Matrix structure (π-model splits shunt equally at each end):
@@ -219,8 +206,6 @@ The transmission line's 2x2 primitive admittance (Y-bus) matrix incorporates the
 - `r`, `x`, `g_shunt`, and `b_shunt` must be non-negative; `ValueError` is raised otherwise.
 - Both `r` and `x` cannot be zero simultaneously; `ValueError` is raised otherwise.
 - The π-model divides the total shunt susceptance equally between both ends of the line.
-- The admittance matrix is automatically rebuilt when `r`, `x`, `g`, or `b` are modified.
-- Setting any parameter automatically rebuilds the admittance matrix.
 
 **Example Usage:**
 
@@ -231,8 +216,6 @@ print(line)
 line.b = 0.05             # admittance_matrix is automatically updated
 ```
 
----
-
 ### Circuit
 
 Circuit class for power system network modeling. Serves as a container to assemble a complete power system network by storing and managing all equipment objects (buses, transformers, transmission lines, generators, and loads).
@@ -242,6 +225,7 @@ Circuit class for power system network modeling. Serves as a container to assemb
 - `name` (non-empty str): Identifier for the circuit (must be a non-empty string).
 
 **Attributes:**
+
 - `name` (non-empty str): Identifier for the circuit.
 - `buses` (dict) (dict): Dictionary storing `Bus` objects with bus names as keys.
 - `transformers` (dict) (dict): Dictionary storing `Transformer` objects with transformer names as keys.
@@ -250,15 +234,18 @@ Circuit class for power system network modeling. Serves as a container to assemb
 - `loads` (dict) (dict): Dictionary storing `Load` objects with load names as keys.
 
 **Internal Attributes (automatically managed):**
-- `_bus_index` (dict): Dictionary mapping bus names (str) to integer indices used in the Y-bus matrix. Built automatically by `build_y_bus()`.
-- `_y_bus` (pandas DataFrame): The full system Y-bus admittance matrix. Built automatically by `build_y_bus()` and updated whenever network topology changes.
+
+- `_bus_index` (dict): Dictionary mapping bus names (str) to integer indices used in the Y-bus matrix. Built automatically by `calc_ybus()`.
+- `_y_bus` (pandas DataFrame): The full system Y-bus admittance matrix. Built automatically by `calc_ybus()` and updated whenever network topology changes.
 
 **Methods:**
 
-#### `build_y_bus() -> pd.DataFrame`
+#### `calc_ybus() -> pd.DataFrame`
+
 Constructs the system-wide Y-bus admittance matrix from all network elements.
 
 **Algorithm:**
+
 1. Creates a deterministic bus ordering from the `buses` dictionary (relies on Python 3.7+ ordered dicts).
 2. Builds `_bus_index` mapping: `{bus_name: integer_index}`.
 3. Initializes an n×n complex numpy array (n = number of buses).
@@ -266,33 +253,41 @@ Constructs the system-wide Y-bus admittance matrix from all network elements.
 5. Returns the Y-bus as a pandas DataFrame with bus names as index and columns.
 
 **Y-bus Matrix Construction:**
+
 - **Diagonal elements** `[i, i]`: Sum of all admittances connected to bus i, including:
   - Series admittances from all connected lines/transformers
   - Shunt admittances from line π-models (half at each end)
   - Shunt elements from transformers
 - **Off-diagonal elements** `[i, j]`: Negative of the admittance between buses i and j (coupling term).
 
-**Returns:** 
+**Returns:**
+
 - `pd.DataFrame`: System Y-bus matrix (complex-valued, n×n where n = number of buses).
 
 **Notes:**
+
 - Called automatically during `__init__` and after adding any transformer or transmission line.
 - Returns an empty DataFrame if no buses exist in the circuit.
 
 #### `add_bus(name: str, nominal_kv: float) -> None`
+
 Add a bus to the circuit.
 
 **Args:**
+
 - `name` (str): Bus name (must be unique within buses).
 - `nominal_kv` (float): Nominal voltage in kV.
 
 **Raises:**
+
 - `ValueError`: If a bus with the same name already exists.
 
 #### `add_transformer(name: str, bus1_name: str, bus2_name: str, r: float, x: float) -> None`
+
 Add a transformer to the circuit.
 
 **Args:**
+
 - `name` (str): Transformer name (must be unique within transformers).
 - `bus1_name` (str): Connected bus name on side 1 (must exist in circuit).
 - `bus2_name` (str): Connected bus name on side 2 (must exist in circuit).
@@ -300,15 +295,19 @@ Add a transformer to the circuit.
 - `x` (float): Series reactance.
 
 **Raises:**
+
 - `ValueError`: If a transformer with the same name already exists, or if either bus name is not in the circuit.
 
 **Side Effects:**
+
 - Rebuilds the Y-bus matrix via `build_y_bus()`.
 
 #### `add_transmission_line(name: str, bus1_name: str, bus2_name: str, r: float, x: float) -> None`
+
 Add a transmission line to the circuit.
 
 **Args:**
+
 - `name` (str): Line name (must be unique within transmission lines).
 - `bus1_name` (str): From-bus name (must exist in circuit).
 - `bus2_name` (str): To-bus name (must exist in circuit).
@@ -316,47 +315,43 @@ Add a transmission line to the circuit.
 - `x` (float): Series reactance.
 
 **Raises:**
+
 - `ValueError`: If a transmission line with the same name already exists, or if either bus name is not in the circuit.
 
 **Side Effects:**
+
 - Rebuilds the Y-bus matrix via `build_y_bus()`.
 
 #### `add_generator(name: str, bus_name: str, voltage_setpoint: float, mw_setpoint: float) -> None`
+
 Add a generator to the circuit.
 
 **Args:**
+
 - `name` (str): Generator name (must be unique within generators).
 - `bus_name` (str): Bus name where generator is connected.
 - `voltage_setpoint` (float): Voltage setpoint in per unit.
 - `mw_setpoint` (float): Active power setpoint in MW.
 
 **Raises:**
+
 - `ValueError`: If a generator with the same name already exists.
 
 #### `add_load(name: str, bus_name: str, mw: float, mvar: float) -> None`
+
 Add a load to the circuit.
 
 **Args:**
+
 - `name` (str): Load name (must be unique within loads).
 - `bus_name` (str): Bus name where load is connected.
 - `mw` (float): Real power in megawatts.
 - `mvar` (float): Reactive power in megavolt-amperes reactive.
 
 **Raises:**
+
 - `ValueError`: If a load with the same name already exists.
 - `y_bus` (pd.DataFrame): The system Y-bus matrix. Raises `RuntimeError` if `build_y_bus()` has not been called yet.
-
-**Methods:**
-
-| Method | Description |
-|--------|-------------|
-
-| `add_bus(name, nominal_kv)` | Add a new bus to the circuit |
-| `add_transformer(name, bus1_name, bus2_name, r, x, g, b)` | Add a transformer between two existing buses |
-| `add_transmission_line(name, bus1_name, bus2_name, r, x, g, b)` | Add a transmission line between two existing buses |
-| `add_generator(name, bus_name, voltage_setpoint, mw_setpoint)` | Add a generator connected to an existing bus |
-| `add_load(name, bus1_name, mw, mvar)` | Add a load connected to an existing bus |
-| `calc_ybus()` | Calculate (or recalculate) the system Y-bus matrix from current circuit elements |
 
 **Notes & Warnings:**
 
@@ -388,16 +383,11 @@ circuit.add_transformer("T1", "Bus 3", "Bus 1", r=0.005, x=0.05)
 circuit.calc_ybus()
 print(circuit.y_bus)
 
-# Access the system Y-bus matrix
-print(circuit._y_bus)
-
 # Access bus index mapping
 print(circuit._bus_index)
 
 print(circuit)
 ```
-
----
 
 ## Y-Bus Matrix Calculation
 

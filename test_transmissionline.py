@@ -46,11 +46,13 @@ def test_y_matrix_elements():
     line1 = TransmissionLine("Line 1", "Bus 1", "Bus 2",
                              r=0.02, x=0.25, b = .03)
     y_matrix = line1.admittance_matrix
+    print('\nAdmittance Matrix:\n',y_matrix.values.round(2))
     expected_element = 1/(line1.r+1j*line1.x) + 1j*.03 *1/2
     assert y_matrix.values[0,0] - expected_element < 1e-7, f"Expected {expected_element}, got {y_matrix.values[0,0]}"
     assert y_matrix.values[1,1] - expected_element < 1e-7, f"Expected {expected_element}, got {y_matrix.values[1,1]}"
     assert y_matrix.values[0,1] + expected_element < 1e-7, f"Expected {-expected_element}, got {y_matrix.values[0,1]}"
     assert y_matrix.values[1,0] + expected_element < 1e-7, f"Expected {-expected_element}, got {y_matrix.values[1,0]}"
+    
 
 def test_y_matrix_off_diagonal_elements():
     """Off-diagonal elements should equal -Yseries."""
@@ -58,7 +60,6 @@ def test_y_matrix_off_diagonal_elements():
                              r=0.02, x=0.25, b = .03)
     y_matrix = line1.admittance_matrix
     expected_off = 1/(line1.r+1j*line1.x)
-    print('\nAdmittance Matrix:\n',y_matrix)
     assert y_matrix.values[0,0] - expected_off < 1e-7, f"Expected {expected_off}, got {y_matrix.values[0,0]}"
     assert y_matrix.values[1,1] - expected_off < 1e-7, f"Expected {expected_off}, got {y_matrix.values[1,1]}"
    
