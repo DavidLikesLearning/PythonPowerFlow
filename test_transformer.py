@@ -1,6 +1,5 @@
 from transformer import Transformer
 import pandas as pd
-import numpy as np
 import pytest
 
 def test_invalid_name_rejected():
@@ -43,6 +42,10 @@ def test_admittance_matrix_updates():
     y_expected = 1/( t.r + 1j * t.x)
     matrix = t.admittance_matrix
     assert abs(t.admittance_matrix.values[0,0] - y_expected) < 1e-12
+
+def test_admittance_matrix_printed():
+    t = Transformer("L1", "BUS1", "BUS2", r=0.2, x=0.3)
+    print('\nAdmittance Matrix:\n',t.admittance_matrix)
 
 if __name__ == "__main__":
     test_invalid_name_rejected()

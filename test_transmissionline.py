@@ -62,6 +62,18 @@ def test_y_matrix_off_diagonal_elements():
     expected_off = 1/(line1.r+1j*line1.x)
     assert y_matrix.values[0,0] - expected_off < 1e-7, f"Expected {expected_off}, got {y_matrix.values[0,0]}"
     assert y_matrix.values[1,1] - expected_off < 1e-7, f"Expected {expected_off}, got {y_matrix.values[1,1]}"
+
+def test_admittance_matrix_printed():
+    line1 = TransmissionLine("Line 1", "Bus 1", "Bus 2",
+                             r=0.02, x=0.25, b = .03)
+    y_matrix = line1.admittance_matrix
+    print('\nAdmittance Matrix:\n',y_matrix)
+
+def test_transmission_line_representation():
+    line1 = TransmissionLine("Line 1", "Bus 1", "Bus 2",
+                             r=0.02, x=0.25, b = .03, g=0)
+    expected_str = "TransmissionLine(name='Line 1', bus1_name='Bus 1', bus2_name='Bus 2', r=0.02, x=0.25, b=0.03, g=0)"
+    assert repr(line1) == expected_str, f"Expected {expected_str}, got {repr(line1)}"
    
 
 if __name__ == "__main__":
@@ -70,5 +82,6 @@ if __name__ == "__main__":
     test_undefined_when_r_and_x_zero()
     test_y_matrix_elements()
     test_y_matrix_off_diagonal_elements()
-
+    test_admittance_matrix_printed()
+    test_transmission_line_representation()
     print("Congratulations 👌\nTransmission tests passed.")

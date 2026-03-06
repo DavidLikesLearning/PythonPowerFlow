@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import pytest
+# import settings
 
 @dataclass
 class Load:
@@ -21,6 +22,8 @@ class Load:
         self._bus1_name = bus1_name
         self._mw = mw
         self._mvar = mvar
+        self._p = None  # will be set during power flow solution
+        self._q = None  # will be set during power flow solution
         self._validate_params(name, bus1_name, mw, mvar)
 
     def __repr__(self) -> str:
@@ -49,6 +52,12 @@ class Load:
             raise ValueError("name and bus1_name must be non-empty strings")
 
         # No specific constraints on mw and mvar values (can be positive, negative, or zero)
+    
+    @staticmethod
+    def _as_float(value: int | float, field: str) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(f"{field} must be a number")
+        return float(value)
 
     # --- name ---
     @property
@@ -94,6 +103,30 @@ class Load:
     @property
     def mva(self) -> float:
         return math.sqrt(self.mw ** 2 + self.mvar ** 2)
+    
+    @property
+    def p(self) -> float|None:
+        """Per unit real power injection, set during power flow solution."""
+        return self._p
+    
+    @p.setter
+    def p(self, value: float|None) -> None:
+        if value is None:
+            self._p = None
+            return
+        self._p = self._as_float(value, "p")
+    
+    @property
+    def q(self) -> float|None:
+        """Per unit reactive power injection, set during power flow solution."""
+        return self._q
+    
+    @q.setter
+    def q(self, value: float|None) -> None:
+        if value is None:
+            self._q = None
+            return
+        self._q = self._as_float(value, "q")    
 
 
 # --- Tests ---

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 import pytest
-
+# import settings
 
 class Generator:
     """
@@ -12,6 +12,7 @@ class Generator:
         bus_name: Name of the connected bus (non-empty string).
         mw_setpoint: Active power setpoint in MW (float).
         v_setpoint: Voltage magnitude setpoint in p.u. (float or None).
+        p: per unit real power injection (float or None).
     """
 
     def __init__(
@@ -26,6 +27,7 @@ class Generator:
         self._bus_name = bus_name
         self._mw_setpoint = mw_setpoint
         self._v_setpoint = v_setpoint
+        self._p = None  # will be set during power flow solution
         self._validate_params(name, bus_name, mw_setpoint, v_setpoint)
 
     # ------------------------------------------------------------------
@@ -78,10 +80,14 @@ class Generator:
                 raise ValueError("v_setpoint must be positive when provided")
 
     @staticmethod
-    def _as_float(value: float, field: str) -> float:
+    def _as_float(value: int | float, field: str) -> float:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypeError(f"{field} must be a number")
         return float(value)
+    
+    # def calc_p(self) -> float:
+    #         """Calculate active power injection in per unit."""
+    #         return  self._p / settings.base_mva
 
     # ------------------------------------------------------------------
     # Properties
@@ -131,6 +137,18 @@ class Generator:
             raise ValueError("v_setpoint must be positive when provided")
         self._v_setpoint = v
 
+    @property
+    def p(self) -> float | None:
+        """Per unit real power injection, set during power flow solution."""
+        return self._p
+    
+    # @p.setter
+    # def p(self, value: float | None) -> None:
+    #     if value is not None:
+    #         v = self._as_float(value, "p")
+    #         if not math.isfinite(v):
+    #             raise ValueError("p must be finite when provided")
+    #     self._p = value
 
 # ----------------------------------------------------------------------
 # Tests (pytest-style, similar to transmission_line.py)

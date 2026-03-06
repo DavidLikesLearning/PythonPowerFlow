@@ -1,6 +1,7 @@
+
+from load import Load
 import math
 import pytest
-from load import Load
 
 # --- Comprehensive Load class tests ---
 
@@ -74,7 +75,7 @@ def test_load_p_and_q_setters():
     load.q = None
     assert load.q is None
     with pytest.raises(TypeError):
-        load.p = "not a float"
+        load.p = "not a float" # type: ignore
     with pytest.raises(TypeError):
         load.q = True
 
@@ -82,7 +83,7 @@ def test_load_as_float_type_check():
     assert Load._as_float(5, "field") == 5.0
     assert Load._as_float(3.2, "field") == 3.2
     with pytest.raises(TypeError):
-        Load._as_float("bad", "field")
+        Load._as_float("bad", "field") # type: ignore
     with pytest.raises(TypeError):
         Load._as_float(True, "field")
 
@@ -93,3 +94,17 @@ def test_load_mva_updates():
     assert math.isclose(load.mva, math.sqrt(81.0 + 64.0), rel_tol=0, abs_tol=1e-12)
     load.mvar = 12.0
     assert math.isclose(load.mva, math.sqrt(81.0 + 144.0), rel_tol=0, abs_tol=1e-12)
+
+if __name__ == "__main__":
+    test_load_basic_creation()
+    test_load_repr_and_str()
+    test_load_setters()
+    test_load_invalid_name()
+    test_load_invalid_bus1_name()
+    test_load_zero_values()
+    test_load_negative_values()
+    test_load_p_and_q_setters()
+    test_load_as_float_type_check()
+    test_load_mva_updates()
+
+    print("Congratulations 👌\nLoad tests passed.")
