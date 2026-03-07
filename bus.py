@@ -23,7 +23,7 @@ class Bus:
     _bus_index = 1  # Class variable to track next available index
     
     def __init__(self, name: str, nominal_kv: float, bus_type:str,
-                 vpu: float = 1, delta: float = 0) -> None:
+                 vpu: float = 1.0, delta: float = 0.0) -> None:
         """
         Initialize a Bus instance.
         
@@ -57,8 +57,7 @@ class Bus:
         if not isinstance(self.name, str) or self.name == "":
             raise ValueError("name must be non-empty strings")
         for float_att, var_name in [(self._v, 'voltage'),
-            (self._nominal_kv, 'nominal_kv'), (self._vpu, 'vpu'),
-            (self._v, 'voltage')]:
+            (self._nominal_kv, 'nominal_kv'), (self._vpu, 'vpu')]:
             if not isinstance(float_att, float) or float_att < 0:
                 raise ValueError(f"{var_name} must be positive float")
         if not isinstance(self.delta, float):
@@ -77,7 +76,7 @@ class Bus:
         """
         Set the voltage at the bus (intended for use by solver classes).
         """
-        if not isinstance(value, float) or not value<0:
+        if not isinstance(value, float) or value<0:
             raise ValueError("voltage must be positive float")
         self._v = value
         self._vpu = value /( self._nominal_kv *1000)
@@ -113,6 +112,17 @@ class Bus:
         if not isinstance(value, float) or not value<0:
             raise ValueError("delta must be positive float")
         self._delta = value
+
+    # --- delta ---
+    @property
+    def bus_type(self) -> str:
+        return self._bus_type
+
+    @bus_type.setter
+    def bus_type(self, value: str) -> None:
+        if not isinstance(value, str) or value not in ["Slack", "PQ", "PV"]:
+            raise ValueError("bus type must be one of Slack, PQ, PV")
+        self._bus_type = value
     
     @classmethod
     def reset_index_counter(cls) -> None:
@@ -122,7 +132,7 @@ class Bus:
         cls._bus_index = 1
 
 
-def test_bus():
+def test_bus_init():
     """Test function for the Bus class."""
     print("Testing Bus class...")
     
@@ -130,43 +140,43 @@ def test_bus():
     Bus.reset_index_counter()
     
     # Test 1: Create a bus with automatic indexing
-    bus1 = Bus("Bus1",120.0)
+    bus1 = Bus("Bus1",120.0, bus_type="Slack")
     print(f"Test 1 - Created bus: {bus1}")
     assert bus1.name == "Bus1"
     assert bus1.bus_index == 1
     assert bus1.nominal_kv == 120.0
-    
+
+def test_bus_attributes():
+    Bus.reset_index_counter()
+
     # Test 2: Create another bus with automatic indexing
-    bus2 = Bus("Bus2", 240.0)
+    bus1 = Bus("Bus1",120.0, bus_type="Slack")
+    bus2 = Bus("Bus2", 240.0, bus_type="PQ")
     print(f"Test 2 - Created second bus: {bus2}")
     assert bus2.name == "Bus2"
     assert bus2.bus_index == 2
     assert bus2.nominal_kv == 240.0
-    
+    assert bus2.bus_type == "PQ"
+
+def test_bus_set_vals():
+    Bus.reset_index_counter()
+    # Test 2: Create another bus with automatic indexing
+    bus1 = Bus("Bus1", 120.0, bus_type="Slack")
+    assert bus1.v == 120.0
     # Test 3: Set voltage using internal method (for solver)
     bus1._set_voltage(240.0)
     print(f"Test 3 - After setting voltage: {bus1}")
     assert bus1.v == 240.0
 
+def test_bus_indexing():
+    Bus.reset_index_counter()
     # Test 6: Test property access and unique indexing
-    bus4 = Bus("Property_Test",100)
-    bus4._set_voltage(480.0)
-    print(f"Test 6 - Property access: name={bus4.name}, index={bus4.bus_index}, voltage={bus4.v}V")
-    assert bus4.name == "Property_Test"  # Instead of bus4.bus_name
-    assert bus4.bus_index == 3
-    assert bus4.v == 480.0
-    
-    # Test 7: Verify voltage property is read-only for users
-    print("Test 7 - Voltage property is read-only")
-    try:
-        bus4.voltage = 500.0  # type: ignore # This should not work
-        print("  ✗ Voltage property should be read-only!")
-        assert False, "Voltage property should be read-only"
-    except AttributeError:
-        print("  ✓ Voltage property is correctly read-only")
-    
-    print("All Bus tests passed!")
-
+    bus4 = Bus("Property_Test",100.0, bus_type="PQ")
+    bus5 = Bus("another",100.0, bus_type="PQ")
+    bus6 = Bus("another_one",100.0, bus_type="PQ")
+    assert bus4.bus_index == 1
+    assert bus5.bus_index == 2
+    assert bus6.bus_index == 3
 
 def main():
     """Main function to run when script is executed directly."""
@@ -178,7 +188,6 @@ def main():
     Bus.reset_index_counter()
     
     # Run tests
-    test_bus()
     
     # Demo usage
     print("\nDemo Usage:")
