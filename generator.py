@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 import pytest
-# import settings
+import settings
 
 class Generator:
     """
@@ -85,9 +85,9 @@ class Generator:
             raise TypeError(f"{field} must be a number")
         return float(value)
     
-    # def calc_p(self) -> float:
-    #         """Calculate active power injection in per unit."""
-    #         return  self._p / settings.base_mva
+    def calc_p(self) -> float:
+            """Calculate active power injection in per unit."""
+            return  self._p / settings.base_mva
 
     # ------------------------------------------------------------------
     # Properties

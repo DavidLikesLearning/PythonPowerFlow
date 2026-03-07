@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import pytest
-# import settings
+import settings
 
 @dataclass
 class Load:
@@ -52,7 +52,18 @@ class Load:
             raise ValueError("name and bus1_name must be non-empty strings")
 
         # No specific constraints on mw and mvar values (can be positive, negative, or zero)
+    def calc_p(self) -> float:
+        """Calculate per unit real power injection based on base MVA."""
+        if settings.base_mva <= 0:
+            raise ValueError("base_mva must be positive")
+        return self.mw / settings.base_mva
     
+    def calc_q(self) -> float:
+        """Calculate per unit reactive power injection based on base MVA."""
+        if settings.base_mva <= 0:
+            raise ValueError("base_mva must be positive")
+        return self.mvar / settings.base_mva
+
     @staticmethod
     def _as_float(value: int | float, field: str) -> float:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
