@@ -39,7 +39,8 @@ class TransmissionLine:
             f"TransmissionLine(name={self._name!r}, "
             f"bus1_name={self._bus1_name!r}, "
             f"bus2_name={self._bus2_name!r}, "
-            f"r={self._r!r}, x={self._x!r})"
+            f"r={self._r!r}, x={self._x!r}, "
+            f"b={self._b!r}, g={self._g!r})"
         )
 
     def __str__(self) -> str:

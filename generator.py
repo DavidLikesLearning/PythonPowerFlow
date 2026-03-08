@@ -1,7 +1,8 @@
 from __future__ import annotations
 import math
 import pytest
-
+from settings import grid_settings
+from typing import Optional
 
 class Generator:
     """
@@ -12,6 +13,7 @@ class Generator:
         bus_name: Name of the connected bus (non-empty string).
         mw_setpoint: Active power setpoint in MW (float).
         v_setpoint: Voltage magnitude setpoint in p.u. (float or None).
+        p: per unit real power injection (float).
     """
 
     def __init__(
@@ -26,6 +28,7 @@ class Generator:
         self._bus_name = bus_name
         self._mw_setpoint = mw_setpoint
         self._v_setpoint = v_setpoint
+        self._p = None  # will be set by calc_p()
         self._validate_params(name, bus_name, mw_setpoint, v_setpoint)
 
     # ------------------------------------------------------------------
@@ -78,10 +81,15 @@ class Generator:
                 raise ValueError("v_setpoint must be positive when provided")
 
     @staticmethod
-    def _as_float(value: float, field: str) -> float:
+    def _as_float(value: int | float, field: str) -> float:
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TypeError(f"{field} must be a number")
         return float(value)
+    
+    def calc_p(self) -> float:
+        """Calculate and update per unit real power injection based on base MVA."""
+        self._p = self.mw_setpoint / grid_settings.sbase
+        return self._p
 
     # ------------------------------------------------------------------
     # Properties
@@ -131,6 +139,10 @@ class Generator:
             raise ValueError("v_setpoint must be positive when provided")
         self._v_setpoint = v
 
+    @property
+    def p(self) -> Optional[float]:
+        """Per unit real power injection, updated by calc_p()."""
+        return self._p
 
 # ----------------------------------------------------------------------
 # Tests (pytest-style, similar to transmission_line.py)

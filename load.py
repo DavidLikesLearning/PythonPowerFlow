@@ -2,6 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import pytest
+from settings import grid_settings
+from typing import Optional
 
 @dataclass
 class Load:
@@ -21,6 +23,8 @@ class Load:
         self._bus1_name = bus1_name
         self._mw = mw
         self._mvar = mvar
+        self._p = None  # will be set by calc_p()
+        self._q = None  # will be set by calc_q()
         self._validate_params(name, bus1_name, mw, mvar)
 
     def __repr__(self) -> str:
@@ -49,6 +53,21 @@ class Load:
             raise ValueError("name and bus1_name must be non-empty strings")
 
         # No specific constraints on mw and mvar values (can be positive, negative, or zero)
+    def calc_p(self) -> float:
+        """Calculate and update per unit real power injection based on base MVA."""
+        self._p = self.mw / grid_settings.sbase
+        return self._p
+    
+    def calc_q(self) -> float:
+        """Calculate and update per unit reactive power injection based on base MVA."""
+        self._q = self.mvar / grid_settings.sbase
+        return self._q
+
+    @staticmethod
+    def _as_float(value: int | float, field: str) -> float:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError(f"{field} must be a number")
+        return float(value)
 
     # --- name ---
     @property
@@ -94,7 +113,16 @@ class Load:
     @property
     def mva(self) -> float:
         return math.sqrt(self.mw ** 2 + self.mvar ** 2)
+    
+    @property
+    def p(self) -> Optional[float]:
+        """Per unit real power injection, updated by calc_p()."""
+        return self._p
 
+    @property
+    def q(self) -> Optional[float]:
+        """Per unit reactive power injection, updated by calc_q()."""
+        return self._q
 
 # --- Tests ---
 
