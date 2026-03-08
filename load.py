@@ -2,7 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import pytest
-import settings
+from settings import grid_settings
 
 @dataclass
 class Load:
@@ -54,15 +54,15 @@ class Load:
         # No specific constraints on mw and mvar values (can be positive, negative, or zero)
     def calc_p(self) -> float:
         """Calculate per unit real power injection based on base MVA."""
-        if settings.base_mva <= 0:
+        if grid_settings.sbase <= 0:
             raise ValueError("base_mva must be positive")
-        return self.mw / settings.base_mva
+        return self.mw / grid_settings.sbase
     
     def calc_q(self) -> float:
         """Calculate per unit reactive power injection based on base MVA."""
-        if settings.base_mva <= 0:
+        if grid_settings.sbase <= 0:
             raise ValueError("base_mva must be positive")
-        return self.mvar / settings.base_mva
+        return self.mvar / grid_settings.sbase
 
     @staticmethod
     def _as_float(value: int | float, field: str) -> float:

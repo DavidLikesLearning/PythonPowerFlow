@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 import pytest
-import settings
+from settings import grid_settings
 
 class Generator:
     """
@@ -27,7 +27,7 @@ class Generator:
         self._bus_name = bus_name
         self._mw_setpoint = mw_setpoint
         self._v_setpoint = v_setpoint
-        self._p = None  # will be set during power flow solution
+        self._p : float  # will be set during power flow solution
         self._validate_params(name, bus_name, mw_setpoint, v_setpoint)
 
     # ------------------------------------------------------------------
@@ -86,8 +86,10 @@ class Generator:
         return float(value)
     
     def calc_p(self) -> float:
-            """Calculate active power injection in per unit."""
-            return  self._p / settings.base_mva
+        """Calculate per unit real power injection based on base MVA."""
+        if grid_settings.sbase <= 0:
+            raise ValueError("base_mva must be positive")
+        return self._p / grid_settings.sbase
 
     # ------------------------------------------------------------------
     # Properties
