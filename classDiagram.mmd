@@ -36,30 +36,53 @@ classDiagram
         - mw: float
         - mvar: float
         + mva: float
+        + p: float | None
+        + q: float | None
+        + calc_p(): float
+        + calc_q(): float
     }
 
     class Generator {
         - name: str
         - bus_name: str
         - mw_setpoint: float
-        - v_setpoint: float
+        - v_setpoint: float | None
+        + p: float | None
+        + calc_p(): float
     }
 
     class Circuit {
-        - name: str
-        - buses: dict
-        - transformers: dict
-        - transmission_lines: dict
-        - generators: dict
-        - loads: dict
-        - y_bus: pd.DataFrame
+        - _name: str
+        - _buses: dict[str, Bus]
+        - _transformers: dict[str, Transformer]
+        - _transmission_lines: dict[str, TransmissionLine]
+        - _generators: dict[str, Generator]
+        - _loads: dict[str, Load]
+        - _bus_index: dict[str, int]
+        - _y_bus: pd.DataFrame | None
+        + name: str
+        + buses: dict
+        + transformers: dict
+        + transmission_lines: dict
+        + generators: dict
+        + loads: dict
+        + y_bus: pd.DataFrame
+        + calc_ybus(): pd.DataFrame
         + add_bus()
         + add_transformer()
         + add_transmission_line()
         + add_generator()
-        + add_load()
-        + calc_ybus()
+        + add_load() 
     }
+    class Settings {
+            - _freq: float
+            - _sbase: float
+            + freq: float
+            + sbase: float
+            + __init__(freq: float = 60.0, sbase: float = 100.0)
+            + _validate_params(freq: float, sbase: float)
+        }
+    
 
     Circuit "1" o-- "*" Bus : contains
     Circuit "1" o-- "*" Transformer : contains

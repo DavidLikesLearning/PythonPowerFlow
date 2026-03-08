@@ -47,12 +47,20 @@ Load model representing a power consumption element connected to a single bus.
 - `mw` (float): Real power consumption (megawatts).
 - `mvar` (float): Reactive power consumption (megavolt-amperes reactive).
 - `mva` (float, read-only): Apparent power (MVA), computed as `sqrt(mw² + mvar²)`.
+- `p` (float or None, read-only): Per unit real power injection, updated by `calc_p()`.
+- `q` (float or None, read-only): Per unit reactive power injection, updated by `calc_q()`.
+
+**Methods:**
+
+- `calc_p()`: Calculates and updates per unit real power injection based on system base MVA. Sets `p`.
+- `calc_q()`: Calculates and updates per unit reactive power injection based on system base MVA. Sets `q`.
 
 **Notes & Warnings:**
 
 - `name` and `bus1_name` must be non-empty strings; `ValueError` is raised otherwise.
 - `mw` and `mvar` can be any float (positive, negative, or zero).
 - `mva` is a computed read-only property; it updates automatically when `mw` or `mvar` change.
+- `p` and `q` are initially None; call `calc_p()` and `calc_q()` to update them.
 
 **Example Usage:**
 
@@ -61,6 +69,10 @@ load = Load("LOAD1", "BUS1", mw=3.0, mvar=4.0)
 print(load.mva)      # 5.0
 load.mw = 6.0
 print(load.mva)      # sqrt(36 + 16) ≈ 7.211
+load.calc_p()        # updates load.p
+load.calc_q()        # updates load.q
+print(load.p)        # per unit real power (float or None)
+print(load.q)        # per unit reactive power (float or None)
 print(load)
 ```
 
@@ -74,6 +86,11 @@ Generator model representing a power source connected to a single bus.
 - `bus_name` (non-empty str): Name of the connected bus (must be a non-empty string).
 - `mw_setpoint` (float): Active power setpoint in MW (must be finite).
 - `v_setpoint` (float or None): Voltage magnitude setpoint in p.u. (must be positive if provided).
+- `p` (float or None, read-only): Per unit real power injection, updated by `calc_p()`.
+
+**Methods:**
+
+- `calc_p()`: Calculates and updates per unit real power injection based on system base MVA. Sets `p`.
 
 **Notes & Warnings:**
 
@@ -81,6 +98,7 @@ Generator model representing a power source connected to a single bus.
 - `mw_setpoint` must be a finite number; `ValueError` is raised otherwise.
 - `v_setpoint` (if provided) must be a positive number; `ValueError` is raised otherwise.
 - Passing a non-numeric type for `mw_setpoint` raises a `TypeError`.
+- `p` is initially None; call `calc_p()` to update it.
 
 **Example Usage:**
 
@@ -89,6 +107,8 @@ g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.05)
 print(g)                   # Generator G1 at bus BUS1: P=100.0 MW, Vset=1.05 p.u.
 g.mw_setpoint = 150.0
 g.v_setpoint = None        # slack bus or no voltage control
+g.calc_p()                 # updates g.p
+print(g.p)                 # per unit real power (float or None)
 ```
 
 ### Transformer
