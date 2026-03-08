@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import math
 import pytest
 from settings import grid_settings
+from typing import Optional
 
 @dataclass
 class Load:
@@ -22,8 +23,8 @@ class Load:
         self._bus1_name = bus1_name
         self._mw = mw
         self._mvar = mvar
-        self._p = None  # will be set during power flow solution
-        self._q = None  # will be set during power flow solution
+        self._p = None  # will be set by calc_p()
+        self._q = None  # will be set by calc_q()
         self._validate_params(name, bus1_name, mw, mvar)
 
     def __repr__(self) -> str:
@@ -53,16 +54,14 @@ class Load:
 
         # No specific constraints on mw and mvar values (can be positive, negative, or zero)
     def calc_p(self) -> float:
-        """Calculate per unit real power injection based on base MVA."""
-        if grid_settings.sbase <= 0:
-            raise ValueError("base_mva must be positive")
-        return self.mw / grid_settings.sbase
+        """Calculate and update per unit real power injection based on base MVA."""
+        self._p = self.mw / grid_settings.sbase
+        return self._p
     
     def calc_q(self) -> float:
-        """Calculate per unit reactive power injection based on base MVA."""
-        if grid_settings.sbase <= 0:
-            raise ValueError("base_mva must be positive")
-        return self.mvar / grid_settings.sbase
+        """Calculate and update per unit reactive power injection based on base MVA."""
+        self._q = self.mvar / grid_settings.sbase
+        return self._q
 
     @staticmethod
     def _as_float(value: int | float, field: str) -> float:
@@ -116,29 +115,14 @@ class Load:
         return math.sqrt(self.mw ** 2 + self.mvar ** 2)
     
     @property
-    def p(self) -> float|None:
-        """Per unit real power injection, set during power flow solution."""
+    def p(self) -> Optional[float]:
+        """Per unit real power injection, updated by calc_p()."""
         return self._p
-    
-    @p.setter
-    def p(self, value: float|None) -> None:
-        if value is None:
-            self._p = None
-            return
-        self._p = self._as_float(value, "p")
-    
-    @property
-    def q(self) -> float|None:
-        """Per unit reactive power injection, set during power flow solution."""
-        return self._q
-    
-    @q.setter
-    def q(self, value: float|None) -> None:
-        if value is None:
-            self._q = None
-            return
-        self._q = self._as_float(value, "q")    
 
+    @property
+    def q(self) -> Optional[float]:
+        """Per unit reactive power injection, updated by calc_q()."""
+        return self._q
 
 # --- Tests ---
 

@@ -64,20 +64,31 @@ def test_load_negative_values():
     load = Load("L7", "BUS7", mw=-5.0, mvar=-12.0)
     assert math.isclose(load.mva, math.sqrt(25.0 + 144.0), rel_tol=0, abs_tol=1e-12)
 
+def test_load_calc_p_and_q():
+    import settings
+    load = Load("L10", "BUS10", mw=50.0, mvar=20.0)
+    old_sbase = settings.grid_settings.sbase
+    settings.grid_settings.sbase = 100.0
+    p_val = load.calc_p()
+    q_val = load.calc_q()
+    assert math.isclose(p_val, 0.5, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(q_val, 0.2, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(load.p, 0.5, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(load.q, 0.2, rel_tol=0, abs_tol=1e-12)
+    with pytest.raises(ValueError):
+        settings.grid_settings.sbase = 0.0
+    settings.grid_settings.sbase = old_sbase
+
 def test_load_p_and_q_setters():
     load = Load("L8", "BUS8", mw=2.0, mvar=3.0)
-    load.p = 0.5
-    assert load.p == 0.5
-    load.q = 0.25
-    assert load.q == 0.25
-    load.p = None
+    # Initially p and q are None
     assert load.p is None
-    load.q = None
     assert load.q is None
-    with pytest.raises(TypeError):
-        load.p = "not a float" # type: ignore
-    with pytest.raises(TypeError):
-        load.q = True
+    # After calc_p and calc_q, p and q are updated
+    load.calc_p()
+    load.calc_q()
+    assert math.isclose(load.p, 0.02, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(load.q, 0.03, rel_tol=0, abs_tol=1e-12)
 
 def test_load_as_float_type_check():
     assert Load._as_float(5, "field") == 5.0

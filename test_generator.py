@@ -79,6 +79,19 @@ def test_generator_invalid_v_setpoint_negative():
     with pytest.raises(ValueError):
         g.v_setpoint = -2.0
 
+def test_generator_calc_p():
+    import math
+    import settings
+    g = Generator("G10", "BUS10", mw_setpoint=50.0)
+    old_sbase = settings.grid_settings.sbase
+    settings.grid_settings.sbase = 100.0
+    p_val = g.calc_p()
+    assert math.isclose(p_val, 0.5, rel_tol=0, abs_tol=1e-12)
+    assert math.isclose(g.p, 0.5, rel_tol=0, abs_tol=1e-12)
+    with pytest.raises(ValueError):
+        settings.grid_settings.sbase = 0.0
+    settings.grid_settings.sbase = old_sbase
+
 # def test_generator_p_setter():
 #     g = Generator("G10", "BUS10", mw_setpoint=10.0)
 #     g.p = 0.5

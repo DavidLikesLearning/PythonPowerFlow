@@ -2,6 +2,7 @@ from __future__ import annotations
 import math
 import pytest
 from settings import grid_settings
+from typing import Optional
 
 class Generator:
     """
@@ -12,7 +13,7 @@ class Generator:
         bus_name: Name of the connected bus (non-empty string).
         mw_setpoint: Active power setpoint in MW (float).
         v_setpoint: Voltage magnitude setpoint in p.u. (float or None).
-        p: per unit real power injection (float or None).
+        p: per unit real power injection (float).
     """
 
     def __init__(
@@ -27,7 +28,7 @@ class Generator:
         self._bus_name = bus_name
         self._mw_setpoint = mw_setpoint
         self._v_setpoint = v_setpoint
-        self._p : float  # will be set during power flow solution
+        self._p = None  # will be set by calc_p()
         self._validate_params(name, bus_name, mw_setpoint, v_setpoint)
 
     # ------------------------------------------------------------------
@@ -86,10 +87,9 @@ class Generator:
         return float(value)
     
     def calc_p(self) -> float:
-        """Calculate per unit real power injection based on base MVA."""
-        if grid_settings.sbase <= 0:
-            raise ValueError("base_mva must be positive")
-        return self._p / grid_settings.sbase
+        """Calculate and update per unit real power injection based on base MVA."""
+        self._p = self.mw_setpoint / grid_settings.sbase
+        return self._p
 
     # ------------------------------------------------------------------
     # Properties
@@ -140,17 +140,9 @@ class Generator:
         self._v_setpoint = v
 
     @property
-    def p(self) -> float | None:
-        """Per unit real power injection, set during power flow solution."""
+    def p(self) -> Optional[float]:
+        """Per unit real power injection, updated by calc_p()."""
         return self._p
-    
-    # @p.setter
-    # def p(self, value: float | None) -> None:
-    #     if value is not None:
-    #         v = self._as_float(value, "p")
-    #         if not math.isfinite(v):
-    #             raise ValueError("p must be finite when provided")
-    #     self._p = value
 
 # ----------------------------------------------------------------------
 # Tests (pytest-style, similar to transmission_line.py)
