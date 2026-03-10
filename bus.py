@@ -5,6 +5,13 @@ This module defines the Bus class which represents a bus (node) in an electrical
 A bus has a name and a voltage value that can be set and retrieved.
 """
 from typing import Optional
+from enum import Enum
+
+class BusType(Enum):
+    Slack = "Slack"
+    PQ = "PQ"
+    PV = "PV"
+
 
 class Bus:
     """
@@ -17,12 +24,15 @@ class Bus:
         name (str): The name identifier of the bus
         index (int): Unique index automatically assigned to each bus
         v (float): The voltage at the bus in volts (set by solver, initially 0.0)
-
+        nominal_kv (float): The nominal voltage of the bus in kilovolts (fixed for each bus)
+        bus_type (BusType): The type of the bus (Slack, PQ, PV) 
+        delta (float): The phase of the bus in degrees
+        vpu (float): The voltage at the bus in per unit
     """
     
     _bus_index = 1  # Class variable to track next available index
     
-    def __init__(self, name: str, nominal_kv: float, bus_type:str,
+    def __init__(self, name: str, nominal_kv: float, bus_type: BusType,
                  vpu: float = 1.0, delta: float = 0.0) -> None:
         """
         Initialize a Bus instance.
@@ -30,7 +40,7 @@ class Bus:
         Args:
             name (str): The name identifier of the bus
             nominal_kv (float): The nominal voltage of the bus in kilovolts
-            bus_type (str): The bus type (Slack, PQ, PV)
+            bus_type (BusType): The bus type (Slack, PQ, PV)
             vpu (float): The voltage at the bus in per unit
             delta (float): The phase of the bus in degrees
         """
@@ -56,13 +66,10 @@ class Bus:
     def _validate_params(self) -> None:
         if not isinstance(self.name, str) or self.name == "":
             raise ValueError("name must be non-empty strings")
-        for float_att, var_name in [(self._v, 'voltage'),
-            (self._nominal_kv, 'nominal_kv'), (self._vpu, 'vpu')]:
+        for float_att, var_name in [(self._nominal_kv, 'nominal_kv'), (self._vpu, 'vpu'), (self._delta, 'delta')]:
             if not isinstance(float_att, float) or float_att < 0:
                 raise ValueError(f"{var_name} must be positive float")
-        if not isinstance(self.delta, float):
-            raise ValueError("delta must be float")
-        if self._bus_type not in ["Slack", "PQ", "PV"]:
+        if self._bus_type not in BusType:
             raise ValueError("bus type must be one of Slack, PQ, PV")
 
         # No specific constraints on mw and mvar values (can be positive, negative, or zero)
@@ -79,7 +86,7 @@ class Bus:
         if not isinstance(value, float) or value<0:
             raise ValueError("voltage must be positive float")
         self._v = value
-        self._vpu = value /( self._nominal_kv *1000)
+        self._vpu = value / self._nominal_kv
 
     @property
     def nominal_kv(self) -> float:
@@ -97,10 +104,9 @@ class Bus:
 
     @vpu.setter
     def vpu(self, value: float) -> None:
-        if not isinstance(value, float) or not value<0:
+        if not isinstance(value, float) or value<0:
             raise ValueError("vpu must be positive float")
         self._vpu = value
-        self._v = value *( self._nominal_kv *1000)
 
     # --- delta ---
     @property
@@ -109,18 +115,18 @@ class Bus:
 
     @delta.setter
     def delta(self, value: float) -> None:
-        if not isinstance(value, float) or not value<0:
+        if not isinstance(value, float) or value<0:
             raise ValueError("delta must be positive float")
         self._delta = value
 
     # --- delta ---
     @property
-    def bus_type(self) -> str:
+    def bus_type(self) -> BusType:
         return self._bus_type
 
     @bus_type.setter
-    def bus_type(self, value: str) -> None:
-        if not isinstance(value, str) or value not in ["Slack", "PQ", "PV"]:
+    def bus_type(self, value: BusType) -> None:
+        if not isinstance(value, BusType):
             raise ValueError("bus type must be one of Slack, PQ, PV")
         self._bus_type = value
     
@@ -140,7 +146,7 @@ def test_bus_init():
     Bus.reset_index_counter()
     
     # Test 1: Create a bus with automatic indexing
-    bus1 = Bus("Bus1",120.0, bus_type="Slack")
+    bus1 = Bus("Bus1",120.0, bus_type=BusType.Slack)
     print(f"Test 1 - Created bus: {bus1}")
     assert bus1.name == "Bus1"
     assert bus1.bus_index == 1
@@ -150,18 +156,18 @@ def test_bus_attributes():
     Bus.reset_index_counter()
 
     # Test 2: Create another bus with automatic indexing
-    bus1 = Bus("Bus1",120.0, bus_type="Slack")
-    bus2 = Bus("Bus2", 240.0, bus_type="PQ")
+    bus1 = Bus("Bus1",120.0, bus_type=BusType.Slack)
+    bus2 = Bus("Bus2", 240.0, bus_type=BusType.PQ)
     print(f"Test 2 - Created second bus: {bus2}")
     assert bus2.name == "Bus2"
     assert bus2.bus_index == 2
     assert bus2.nominal_kv == 240.0
-    assert bus2.bus_type == "PQ"
+    assert bus2.bus_type == BusType.PQ
 
 def test_bus_set_vals():
     Bus.reset_index_counter()
     # Test 2: Create another bus with automatic indexing
-    bus1 = Bus("Bus1", 120.0, bus_type="Slack")
+    bus1 = Bus("Bus1", 120.0, bus_type=BusType.Slack)
     assert bus1.v == 120.0
     # Test 3: Set voltage using internal method (for solver)
     bus1._set_voltage(240.0)
@@ -171,9 +177,9 @@ def test_bus_set_vals():
 def test_bus_indexing():
     Bus.reset_index_counter()
     # Test 6: Test property access and unique indexing
-    bus4 = Bus("Property_Test",100.0, bus_type="PQ")
-    bus5 = Bus("another",100.0, bus_type="PQ")
-    bus6 = Bus("another_one",100.0, bus_type="PQ")
+    bus4 = Bus("Property_Test",100.0, bus_type=BusType.PQ)
+    bus5 = Bus("another",100.0, bus_type=BusType.PQ)
+    bus6 = Bus("another_one",100.0, bus_type=BusType.PQ)
     assert bus4.bus_index == 1
     assert bus5.bus_index == 2
     assert bus6.bus_index == 3
@@ -195,9 +201,9 @@ def main():
     
     # Create some example buses
     buses = [
-        Bus("Generator_Bus",100),
-        Bus("Load_Bus_1",200),
-        Bus("Load_Bus_2",400)
+        Bus("Generator_Bus",100, bus_type=BusType.Slack),
+        Bus("Load_Bus_1",200, bus_type=BusType.PQ),
+        Bus("Load_Bus_2",400, bus_type=BusType.PQ)
     ]
     
     print("Initial bus states:")
@@ -216,7 +222,7 @@ def main():
         
     print("\nBus indexing demonstration:")
     print(f"Next bus will have index: {Bus._bus_index}")
-    new_bus = Bus("New_Bus",300)
+    new_bus = Bus("New_Bus",300, bus_type=BusType.PQ)
     print(f"Created: {new_bus}")
 
 
