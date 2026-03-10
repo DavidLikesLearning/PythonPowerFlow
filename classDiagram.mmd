@@ -1,9 +1,24 @@
 classDiagram
+    class BusType {
+        <<enumeration>>
+        Slack
+        PQ
+        PV
+    }
+
     class Bus {
         - name: str
         - bus_index: int
-        - nominal_kv: float
-        - v: float
+        - _nominal_kv: float
+        - _v: float
+        - _bus_type: BusType
+        - _vpu: float
+        - _delta: float
+        + nominal_kv: float
+        + v: float
+        + bus_type: BusType
+        + vpu: float
+        + delta: float
         + _set_voltage(value: float)
         + reset_index_counter()
     }
@@ -85,6 +100,7 @@ classDiagram
     
 
     Circuit "1" o-- "*" Bus : contains
+    Bus "1" o-- "1" BusType : uses
     Circuit "1" o-- "*" Transformer : contains
     Circuit "1" o-- "*" TransmissionLine : contains
     Circuit "1" o-- "*" Generator : contains

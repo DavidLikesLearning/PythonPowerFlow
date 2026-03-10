@@ -14,6 +14,24 @@ Represents a bus (node) in an electrical circuit. Each bus is automatically assi
 - `bus_index` (int): Unique index automatically assigned to each bus, incremented globally
 - `nominal_kv` (float): Nominal voltage of the bus in kilovolts (read-only)
 - `v` (float): The voltage at the bus in kV (set by solver, initially equals `nominal_kv`)
+- `bus_type` (BusType): The type of the bus, must be selected from the `BusType` enumeration (`BusType.Slack`, `BusType.PQ`, `BusType.PV`)
+- `vpu` (float): Voltage at the bus in per unit (default 1.0)
+- `delta` (float): Phase angle of the bus in degrees (default 0.0)
+
+**BusType Enumeration:**
+
+```python
+from bus import BusType
+BusType.Slack  # Slack bus
+BusType.PQ     # PQ bus
+BusType.PV     # PV bus
+```
+
+**Constructor:**
+
+```python
+Bus(name: str, nominal_kv: float, bus_type: BusType, vpu: float = 1.0, delta: float = 0.0)
+```
 
 **Methods:**
 
@@ -22,18 +40,24 @@ Represents a bus (node) in an electrical circuit. Each bus is automatically assi
 
 **Notes & Warnings:**
 
+- `bus_type` must be selected from the `BusType` enumeration. Do **not** use strings; always use `BusType.Slack`, `BusType.PQ`, or `BusType.PV`.
 - `v` is a read-only property for users; only solver classes should call `_set_voltage()`.
 - `bus_index` is assigned automatically and increments globally across all Bus instances.
+- `nominal_kv`, `vpu`, and `delta` must be positive floats.
 
 **Example Usage:**
 
 ```python
+from bus import Bus, BusType
 Bus.reset_index_counter()         # reset index for clean state
-bus1 = Bus("Bus1", 120.0)         # index = 1
-bus2 = Bus("Bus2", 240.0)         # index = 2
+bus1 = Bus("Bus1", 120.0, bus_type=BusType.Slack)         # index = 1
+bus2 = Bus("Bus2", 240.0, bus_type=BusType.PQ)            # index = 2
 print(bus1)                        # Bus(name='Bus1', index=1, v=120.0V)
 bus1._set_voltage(115.0)          # only called by a solver
 print(bus1.v)                      # 115.0
+bus1.vpu = 1.05                    # update per unit voltage
+bus1.delta = 5.0                   # update phase angle
+bus1.bus_type = BusType.PV         # change bus type
 ```
 
 ### Load
