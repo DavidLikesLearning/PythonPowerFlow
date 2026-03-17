@@ -106,6 +106,10 @@ def test_load_mva_updates():
     load.mvar = 12.0
     assert math.isclose(load.mva, math.sqrt(81.0 + 144.0), rel_tol=0, abs_tol=1e-12)
 
+def test_zero_load():
+    load = Load("LOAD1", "BUS1", mw=0.0, mvar=0.0)
+    assert math.isclose(load.mva, 0.0, rel_tol=0, abs_tol=1e-12)
+
 if __name__ == "__main__":
     test_load_basic_creation()
     test_load_repr_and_str()

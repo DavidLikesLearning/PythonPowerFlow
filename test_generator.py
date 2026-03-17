@@ -92,16 +92,6 @@ def test_generator_calc_p():
         settings.grid_settings.sbase = 0.0
     settings.grid_settings.sbase = old_sbase
 
-# def test_generator_p_setter():
-#     g = Generator("G10", "BUS10", mw_setpoint=10.0)
-#     g.p = 0.5
-#     assert g.p == 0.5
-#     g.p = None
-#     assert g.p is None
-#     with pytest.raises(TypeError):
-#         g.p = "not a float" # type: ignore
-#     with pytest.raises(ValueError):
-#         g.p = float("inf")
 
 def test_generator_as_float_type_check():
     assert Generator._as_float(5, "field") == 5.0
@@ -110,3 +100,20 @@ def test_generator_as_float_type_check():
         Generator._as_float("bad", "field") # type: ignore
     with pytest.raises(TypeError):
         Generator._as_float(True, "field")
+
+def test_generator_repr_contains_fields():
+    g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.0)
+    rep = repr(g)
+    assert "Generator(" in rep
+    assert "name='G1'" in rep
+    assert "bus_name='BUS1'" in rep
+    assert "mw_setpoint=100.0" in rep
+    assert "v_setpoint=1.0" in rep
+
+def test_generator_str_human_readable():
+    g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.02)
+    s = str(g)
+    assert "Generator G1" in s
+    assert "BUS1" in s
+    assert "100.0 MW" in s
+    assert "1.02 p.u." in s

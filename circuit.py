@@ -165,8 +165,7 @@ class Circuit:
         return self._y_bus
 
 
-    def add_bus(self, name: str, nominal_kv: float, bus_type: BusType,
-                 vpu: float = 1.0, delta: float = 0.0) -> None:
+    def add_bus(self, name: str, nominal_kv: float, bus_type: BusType) -> None:
         """
         Add a bus to the circuit.
 
@@ -180,9 +179,7 @@ class Circuit:
         if name in self._buses:
             raise ValueError(f"Bus '{name}' already exists in circuit")
 
-
-        self._buses[name] = Bus("Bus1",120.0, bus_type=BusType.Slack,
-                                vpu = vpu, delta = delta)
+        self._buses[name] = Bus("Bus1",120.0, bus_type=BusType.PQ)
 
     def add_transformer(self, name: str, bus1_name: str, bus2_name: str,
                         r: float, x: float, g:float=0, b:float=0) -> None:

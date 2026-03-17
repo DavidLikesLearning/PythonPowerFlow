@@ -145,96 +145,9 @@ class Generator:
         """Per unit real power injection, updated by calc_p()."""
         return self._p
 
-# ----------------------------------------------------------------------
-# Tests (pytest-style, similar to transmission_line.py)
-# ----------------------------------------------------------------------
-def test_generator_basic_creation():
-    g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.05)
-    assert g.name == "G1"
-    assert g.bus_name == "BUS1"
-    assert g.mw_setpoint == 100.0
-    assert g.v_setpoint == 1.05
-
-
-def test_generator_v_setpoint_optional():
-    g = Generator("G1", "BUS1", mw_setpoint=50.0)
-    assert g.v_setpoint is None
-    # setting later
-    g.v_setpoint = 1.0
-    assert g.v_setpoint == 1.0
-
-
-def test_generator_repr_contains_fields():
-    g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.0)
-    rep = repr(g)
-    assert "Generator(" in rep
-    assert "name='G1'" in rep
-    assert "bus_name='BUS1'" in rep
-    assert "mw_setpoint=100.0" in rep
-    assert "v_setpoint=1.0" in rep
-
-
-def test_generator_str_human_readable():
-    g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.02)
-    s = str(g)
-    assert "Generator G1" in s
-    assert "BUS1" in s
-    assert "100.0 MW" in s
-    assert "1.02 p.u." in s
-
-
-def test_invalid_name_rejected():
-    with pytest.raises(ValueError):
-        Generator("", "BUS1", mw_setpoint=10.0)
-
-
-def test_invalid_bus_name_rejected():
-    with pytest.raises(ValueError):
-        Generator("G1", "   ", mw_setpoint=10.0)
-
-
-def test_invalid_mw_setpoint_type():
-    with pytest.raises(TypeError):
-        Generator("G1", "BUS1", mw_setpoint="100 MW")  # type: ignore[arg-type]
-
-
-def test_invalid_mw_setpoint_infinite():
-    with pytest.raises(ValueError):
-        Generator("G1", "BUS1", mw_setpoint=float("inf"))
-
-
-def test_invalid_v_setpoint_negative():
-    with pytest.raises(ValueError):
-        Generator("G1", "BUS1", mw_setpoint=10.0, v_setpoint=-1.0)
-
-
-def test_setters_enforce_validation():
-    g = Generator("G1", "BUS1", mw_setpoint=10.0, v_setpoint=1.0)
-
-    with pytest.raises(ValueError):
-        g.name = ""
-
-    with pytest.raises(ValueError):
-        g.bus_name = "  "
-
-    with pytest.raises(TypeError):
-        g.mw_setpoint = "100"  # type: ignore[assignment]
-
-    with pytest.raises(ValueError):
-        g.v_setpoint = 0.0
+def main():
+    pass
 
 
 if __name__ == "__main__":
-    # simple local test runner, mirroring transmission_line.py style
-    test_generator_basic_creation()
-    test_generator_v_setpoint_optional()
-    test_generator_repr_contains_fields()
-    test_generator_str_human_readable()
-    test_invalid_name_rejected()
-    test_invalid_bus_name_rejected()
-    test_invalid_mw_setpoint_type()
-    test_invalid_mw_setpoint_infinite()
-    test_invalid_v_setpoint_negative()
-    test_setters_enforce_validation()
-
-    print("Congratulations :D\nGenerator tests passed.")
+    main()
