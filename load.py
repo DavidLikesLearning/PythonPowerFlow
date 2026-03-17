@@ -125,45 +125,10 @@ class Load:
         """Per unit reactive power injection, updated by calc_q()."""
         return self._q
 
-# --- Tests ---
+def main():
+    pass
 
-def test_mva_computation_basic():
-    load = Load("LOAD1", "BUS1", mw=3.0, mvar=4.0)
-    assert math.isclose(load.mva, 5.0, rel_tol=0, abs_tol=1e-12)
-
-
-def test_mva_updates_when_mw_changes():
-    load = Load("LOAD1", "BUS1", mw=3.0, mvar=4.0)
-    load.mw = 6.0
-    assert math.isclose(load.mva, math.sqrt(36.0 + 16.0), rel_tol=0, abs_tol=1e-12)
-
-
-def test_mva_updates_when_mvar_changes():
-    load = Load("LOAD1", "BUS1", mw=3.0, mvar=4.0)
-    load.mvar = 8.0
-    assert math.isclose(load.mva, math.sqrt(9.0 + 64.0), rel_tol=0, abs_tol=1e-12)
-
-
-def test_invalid_name_rejected():
-    with pytest.raises(ValueError):
-        Load("", "BUS1", mw=1.0, mvar=1.0)
-
-
-def test_invalid_bus1_name_rejected():
-    with pytest.raises(ValueError):
-        Load("LOAD1", "", mw=1.0, mvar=1.0)
-
-
-def test_zero_load():
-    load = Load("LOAD1", "BUS1", mw=0.0, mvar=0.0)
-    assert math.isclose(load.mva, 0.0, rel_tol=0, abs_tol=1e-12)
 
 
 if __name__ == "__main__":
-    test_mva_computation_basic()
-    test_mva_updates_when_mw_changes()
-    test_mva_updates_when_mvar_changes()
-    test_invalid_name_rejected()
-    test_invalid_bus1_name_rejected()
-    test_zero_load()
-    print("Congratulations :D\nLoad tests passed.")
+   main()

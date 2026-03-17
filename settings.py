@@ -12,10 +12,9 @@ class Settings:
         sbase: System base apparent power (MVA). Default = 100 MVA.
     """
 
-    def __init__(self, freq: float = 60.0, sbase: float = 100.0):
-        self._freq: float = freq
-        self._sbase: float = sbase
-        self._validate_params(freq, sbase)
+    def __init__(self):
+        self._freq: float = 60
+        self._sbase: float = 100
 
     def __repr__(self) -> str:
         return f"Settings(freq={self._freq!r}, sbase={self._sbase!r})"
@@ -24,12 +23,6 @@ class Settings:
         return (
             f"Settings: freq={self._freq} Hz, sbase={self._sbase} MVA"
         )
-
-    def _validate_params(self, freq: float, sbase: float) -> None:
-        if not isinstance(freq, (int, float)) or freq <= 0:
-            raise ValueError("freq must be a positive number")
-        if not isinstance(sbase, (int, float)) or sbase <= 0:
-            raise ValueError("sbase must be a positive number")
 
     # --- freq ---
     @property
