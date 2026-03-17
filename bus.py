@@ -69,19 +69,19 @@ class Bus:
         for float_att, var_name in [(self._nominal_kv, 'nominal_kv'), (self._vpu, 'vpu'), (self._delta, 'delta')]:
             if not isinstance(float_att, float) or float_att < 0:
                 raise ValueError(f"{var_name} must be positive float")
-        if self._bus_type not in BusType:
-            raise ValueError("bus type must be one of Slack, PQ, PV")
+        if self._bus_type not in [BusType.PQ, BusType.PV, BusType.Slack]:
+            raise ValueError("bus type must be BusType class, one of Slack, PQ, PV")
 
         # No specific constraints on mw and mvar values (can be positive, negative, or zero)
 
     @property
     def v(self) -> float:
-        """Get the voltage at the bus in volts (read-only for users)."""
+        """Get the voltage at the bus in kilovolts (read-only for users)."""
         return self._v
 
     def _set_voltage(self, value: float) -> None:
         """
-        Set the voltage at the bus (intended for use by solver classes).
+        Set the voltage at the bus (in kilovolts).
         """
         if not isinstance(value, float) or value<0:
             raise ValueError("voltage must be positive float")
