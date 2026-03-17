@@ -2,8 +2,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import pytest
-from settings import grid_settings
 from typing import Optional
+
+from settings import grid_settings
 
 @dataclass
 class Load:

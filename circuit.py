@@ -3,14 +3,17 @@ from __future__ import annotations
 from typing import Dict
 import warnings
 
+from bus import BusType
 from bus import Bus
 from transformer import Transformer
 from transmissionline import TransmissionLine
 from generator import Generator
 from load import Load
+from settings import grid_settings
 
 import numpy as np
 import pandas as pd
+
 
 
 class Circuit:
@@ -162,7 +165,8 @@ class Circuit:
         return self._y_bus
 
 
-    def add_bus(self, name: str, nominal_kv: float) -> None:
+    def add_bus(self, name: str, nominal_kv: float, bus_type: BusType,
+                 vpu: float = 1.0, delta: float = 0.0) -> None:
         """
         Add a bus to the circuit.
 
@@ -177,7 +181,8 @@ class Circuit:
             raise ValueError(f"Bus '{name}' already exists in circuit")
 
 
-        self._buses[name] = Bus(name, nominal_kv)
+        self._buses[name] = Bus("Bus1",120.0, bus_type=BusType.Slack,
+                                vpu = vpu, delta = delta)
 
     def add_transformer(self, name: str, bus1_name: str, bus2_name: str,
                         r: float, x: float, g:float=0, b:float=0) -> None:
@@ -262,216 +267,9 @@ class Circuit:
         """
         if name in self._loads:
             raise ValueError(f"Load '{name}' already exists in circuit")
-
         self._loads[name] = Load(name, bus1_name, mw, mvar)
 
 
-# --- Testing functions ---
-def test_circuit_creation():
-    """Test basic circuit creation."""
-    circuit = Circuit("Test Circuit")
-    assert circuit.name == "Test Circuit"
-    assert isinstance(circuit.name, str)
-    print("✓ Circuit creation test passed")
-
-
-def test_empty_name_rejected():
-    """Test that empty names are rejected."""
-    try:
-        Circuit("")
-        assert False, "Should have raised ValueError"
-    except ValueError:
-        print("✓ Empty name rejection test passed")
-
-
-def test_attribute_initialization():
-    """Test that all dictionaries are initialized correctly."""
-    circuit = Circuit("Test Circuit")
-    assert circuit.buses == {}
-    assert isinstance(circuit.buses, dict)
-    assert circuit.transformers == {}
-    assert circuit.transmission_lines == {}
-    assert circuit.generators == {}
-    assert circuit.loads == {}
-    print("✓ Attribute initialization test passed")
-
-
-def test_duplicate_component_rejected():
-    """Test that duplicate component names are rejected."""
-    circuit = Circuit("Test Circuit")
-    circuit.add_bus("Bus 1", 20.0)
-    circuit.add_bus("Bus 2", 20.0)
-    circuit.add_generator("Gen 1", "bus 1",
-                          20, 200)
-    circuit.add_transmission_line("Transmission line",
-                                  "Bus 1",bus2_name="Bus 2",
-                                  r = 1 ,x=1)
-    circuit.add_transformer('optimus', bus1_name="Bus 1",bus2_name="Bus 2",
-                            r = 2, x=2)
-    circuit.add_load('Load', bus1_name="Bus 1",mw = 150, mvar=100)
-
-    try:
-        circuit.add_bus("Bus 1", 30.0)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "already exists" in str(e)
-
-    try:
-        circuit.add_generator("Gen 1", "bus 1",
-                              20, 200)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "already exists" in str(e)
-
-    try:
-        circuit.add_transmission_line("Transmission line",
-                                  "Bus 1",bus2_name="Bus 2",
-                                  r = 1 ,x=1)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "already exists" in str(e)
-
-    try:
-        circuit.add_transformer('optimus', bus1_name="Bus 1",bus2_name="Bus 2",
-                            r = 2, x=2)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "already exists" in str(e)
-
-    try:
-        circuit.add_load('Load', bus1_name="Bus 1",mw = 150, mvar=100)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "already exists" in str(e)
-    print("✓ Duplicate component rejection test passed")
-
-
-        
-def test_add_generator():
-    """
-    tests generator addition and name exclusiveness """
-    circuit = Circuit("Test Circuit")
-    circuit.add_generator("Bus 1", bus_name="Bus 1",
-                          mw_setpoint= 100, voltage_setpoint=20.0)
-    assert circuit.generators["Bus 1"].bus_name == "Bus 1"
-    assert circuit.generators["Bus 1"].mw_setpoint == 100
-    assert circuit.generators["Bus 1"].v_setpoint == 20.0
-
-def test_add_connection_without_buses():
-    """Try to add transmission line and transformer when buses aren't in
-    circuit yet — both should raise ValueError."""
-    circuit = Circuit("Test Circuit")
-
-    try:
-        circuit.add_transmission_line("Line 1", "Bus 1", "Bus 2", r=0.01, x=0.1)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "not both in circuit" in str(e)
-
-    try:
-        circuit.add_transformer("T1", bus1_name="Bus 1", bus2_name="Bus 2", r=0.01, x=0.05)
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "not both in circuit" in str(e)
-
-    print("✓ Add connection without buses test passed")
-
-def test_add_transmission_line():
-    """Make a circuit, add two buses, then add a transmission line and
-    verify all its properties are stored correctly."""
-    circuit = Circuit("Test Circuit")
-    circuit.add_bus("Bus 1", 138.0)
-    circuit.add_bus("Bus 2", 138.0)
-    circuit.add_transmission_line("Line 1",
-        "Bus 1", "Bus 2", r=0.02, x=0.2)
-    assert "Line 1" in circuit.transmission_lines
-    line = circuit.transmission_lines["Line 1"]
-    assert line.name == "Line 1"
-    assert line.bus1_name == "Bus 1"
-    assert line.bus2_name == "Bus 2"
-    assert line.r == 0.02
-    assert line.x == 0.2
-    print("✓ Add transmission line test passed")
-
-def test_add_transformer():
-    """Make a circuit, add two buses, then add a transformer and verify
-    its properties are stored correctly."""
-    circuit = Circuit("Test Circuit")
-    circuit.add_bus("Bus 1", 20.0)
-    circuit.add_bus("Bus 2", 138.0)
-    circuit.add_transformer("T1",
-        bus1_name="Bus 1", bus2_name="Bus 2", r=0.005, x=0.05)
-    assert "T1" in circuit.transformers
-    transformer = circuit.transformers["T1"]
-    assert transformer.name == "T1"
-    assert transformer.bus1_name == "Bus 1"
-    assert transformer.bus2_name == "Bus 2"
-    assert transformer.r == 0.005
-    assert transformer.x == 0.05
-    print("✓ Add transformer test passed")
-
-def test_add_load():
-    """Make a circuit, add a load, and verify its properties are stored
-    correctly."""
-    circuit = Circuit("Test Circuit")
-    circuit.add_bus("Bus 1", 20.0)
-    circuit.add_load("Load 1",
-        bus1_name="Bus 1", mw=150.0, mvar=50.0)
-    assert "Load 1" in circuit.loads
-    load = circuit.loads["Load 1"]
-    assert load.name == "Load 1"
-    assert load.bus1_name == "Bus 1"
-    assert load.mw == 150.0
-    assert load.mvar == 50.0
-    print("✓ Add load test passed")
-
-def test_str_repr():
-    """Test string representations."""
-    circuit = Circuit("My Circuit")
-    print(f"✓ __repr__: {repr(circuit)}")
-    print(f"✓ __str__: {str(circuit)}")
-
-def test_build_5bus_example():
-    """Build the 5-bus example from the Power System Analysis book and
-    print the Y-bus matrix."""
-    circuit = Circuit("5-Bus Example")
-    circuit.add_bus("One", 15.0)
-    circuit.add_bus("Two", 345.0)
-    circuit.add_bus("Three", 15.0)
-    circuit.add_bus("Four", 345.0)
-    circuit.add_bus("Five", 345.0)
-
-    circuit.add_transmission_line("Line 4-2", "Four", "Two", r=0.009, x=0.1,  b=1.72)
-    circuit.add_transmission_line("Line 1-3", "Five", "Two", r=0.0045, x=0.05,b=0.88)
-    circuit.add_transmission_line("Line 2-3", "Five", "Four", r=0.00225, x=0.025, b=0.44)
-    
-
-def test_y_bus():
-    """Make a circuit, add two buses, then add a transformer and verify
-    its properties are stored correctly."""
-    circuit = Circuit("Test Circuit")
-    circuit.add_bus("Bus 1", 20.0)
-    circuit.add_bus("Bus 2", 138.0)
-    circuit.add_bus("Bus 3", 138.0)
-    circuit.add_transformer("T1",
-        bus1_name="Bus 1", bus2_name="Bus 2", r=0.005, x=0.05)
-    circuit.add_transformer("T2",
-                            bus1_name="Bus 3", bus2_name="Bus 2", r=0.005, x=0.05)
-    circuit.calc_ybus()
-    print(circuit._y_bus)
-    print("✓ Add transformer test passed")
-
 if __name__ == "__main__":
-    print("Running Circuit class tests...\n")
-    test_circuit_creation()
-    test_empty_name_rejected()
-    test_attribute_initialization()
-    test_add_generator()
-    test_add_connection_without_buses()
-    test_add_transmission_line()
-    test_add_transformer()
-    test_add_load()
-    test_duplicate_component_rejected()
-    test_str_repr()
-    print("\n✅ All Circuit class tests passed!")
+    pass
 

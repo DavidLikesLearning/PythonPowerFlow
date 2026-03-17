@@ -76,12 +76,12 @@ class Bus:
 
     @property
     def v(self) -> float:
-        """Get the voltage at the bus in volts (read-only for users)."""
+        """Get the voltage at the bus in kilovolts (read-only for users)."""
         return self._v
 
     def _set_voltage(self, value: float) -> None:
         """
-        Set the voltage at the bus (intended for use by solver classes).
+        Set the voltage at the bus (in kilovolts).
         """
         if not isinstance(value, float) or value<0:
             raise ValueError("voltage must be positive float")

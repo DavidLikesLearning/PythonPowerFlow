@@ -1,4 +1,6 @@
 from circuit import Circuit
+from bus import BusType
+
 import pandas as pd
 import numpy as np
 
@@ -31,49 +33,41 @@ def test_attribute_initialization():
     assert circuit.loads == {}
     print("✓ Attribute initialization test passed")
 
-
 def test_duplicate_component_rejected():
     """Test that duplicate component names are rejected."""
     circuit = Circuit("Test Circuit")
-    circuit.add_bus("Bus 1", 20.0)
-    circuit.add_bus("Bus 2", 20.0)
+    circuit.add_bus("Bus 1", 20.0, bus_type=BusType.PV)
+    circuit.add_bus("Bus 2", 20.0, bus_type=BusType.PQ)
     circuit.add_generator("Gen 1", "bus 1",
                           20, 200)
     circuit.add_transmission_line("Transmission line",
-                                  "Bus 1",bus2_name="Bus 2",
-                                  r = 1 ,x=1)
-    circuit.add_transformer('optimus', bus1_name="Bus 1",bus2_name="Bus 2",
-                            r = 2, x=2)
-    circuit.add_load('Load', bus1_name="Bus 1",mw = 150, mvar=100)
-
+            "Bus 1",bus2_name="Bus 2", r = 1, x=1)
+    circuit.add_transformer('optimus',
+            bus1_name="Bus 1",bus2_name="Bus 2", r = 2, x=2)
+    circuit.add_load('Load', bus1_name="Bus 2",mw = 150, mvar=100)
     try:
-        circuit.add_bus("Bus 1", 30.0)
+        circuit.add_bus("Bus 1", 30.0,bus_type=BusType.PV)
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "already exists" in str(e)
-
     try:
         circuit.add_generator("Gen 1", "bus 1",
-                              20, 200)
+                20, 200)
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "already exists" in str(e)
-
     try:
         circuit.add_transmission_line("Transmission line",
-                                  "Bus 1",bus2_name="Bus 2",
-                                  r = 1 ,x=1)
+            "Bus 1",bus2_name="Bus 2", r = 1 ,x=1)
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "already exists" in str(e)
-
     try:
-        circuit.add_transformer('optimus', bus1_name="Bus 1",bus2_name="Bus 2",
-                            r = 2, x=2)
+        circuit.add_transformer('optimus', bus1_name="Bus 1",
+            bus2_name="Bus 2",r = 2, x=2)
         assert False, "Should have raised ValueError"
     except ValueError as e:
         assert "already exists" in str(e)
-
     try:
         circuit.add_load('Load', bus1_name="Bus 1",mw = 150, mvar=100)
         assert False, "Should have raised ValueError"
@@ -116,8 +110,8 @@ def test_add_transmission_line():
     """Make a circuit, add two buses, then add a transmission line and
     verify all its properties are stored correctly."""
     circuit = Circuit("Test Circuit")
-    circuit.add_bus("Bus 1", 138.0)
-    circuit.add_bus("Bus 2", 138.0)
+    circuit.add_bus("Bus 1", 138.0,bus_type=BusType.PV)
+    circuit.add_bus("Bus 2", 138.0,bus_type=BusType.PV)
     circuit.add_transmission_line("Line 1",
         "Bus 1", "Bus 2", r=0.02, x=0.2)
     assert "Line 1" in circuit.transmission_lines
@@ -133,8 +127,8 @@ def test_add_transformer():
     """Make a circuit, add two buses, then add a transformer and verify
     its properties are stored correctly."""
     circuit = Circuit("Test Circuit")
-    circuit.add_bus("Bus 1", 20.0)
-    circuit.add_bus("Bus 2", 138.0)
+    circuit.add_bus("Bus 1", 20.0,bus_type=BusType.PV)
+    circuit.add_bus("Bus 2", 138.0,bus_type=BusType.PV)
     circuit.add_transformer("T1",
         bus1_name="Bus 1", bus2_name="Bus 2", r=0.005, x=0.05)
     assert "T1" in circuit.transformers
@@ -150,7 +144,7 @@ def test_add_load():
     """Make a circuit, add a load, and verify its properties are stored
     correctly."""
     circuit = Circuit("Test Circuit")
-    circuit.add_bus("Bus 1", 20.0)
+    circuit.add_bus("Bus 1", 20.0, bus_type=BusType.PQ)
     circuit.add_load("Load 1",
         bus1_name="Bus 1", mw=150.0, mvar=50.0)
     assert "Load 1" in circuit.loads
@@ -192,11 +186,11 @@ def test_build_5bus_example():
     """Build the 5-bus example 6.9 from the Power System Analysis book,
     compare the Y-bus matrix to the CSV, and assert numerical equality."""
     circuit = Circuit("5-Bus Example 6.9")
-    circuit.add_bus("One", 15.0)
-    circuit.add_bus("Two", 345.0)
-    circuit.add_bus("Three", 15.0)
-    circuit.add_bus("Four", 345.0)
-    circuit.add_bus("Five", 345.0)
+    circuit.add_bus("One", 15.0,bus_type=BusType.PQ)
+    circuit.add_bus("Two", 345.0,bus_type=BusType.PQ)
+    circuit.add_bus("Three", 15.0,bus_type=BusType.PV)
+    circuit.add_bus("Four", 345.0,bus_type=BusType.PQ)
+    circuit.add_bus("Five", 345.0,bus_type=BusType.PQ)
 
     circuit.add_transmission_line("L42", "Four", "Two", r=0.009, x=0.1,  b=1.72)
     circuit.add_transmission_line("L52", "Five", "Two", r=0.0045, x=0.05, b=0.88)
@@ -237,9 +231,9 @@ def test_y_bus():
     """Make a circuit, add two buses, then add a transformer and verify
     its properties are stored correctly."""
     circuit = Circuit("Test Circuit")
-    circuit.add_bus("Bus 1", 20.0)
-    circuit.add_bus("Bus 2", 138.0)
-    circuit.add_bus("Bus 3", 138.0)
+    circuit.add_bus("Bus 1", 20.0,bus_type=BusType.PQ)
+    circuit.add_bus("Bus 2", 138.0,bus_type=BusType.PV)
+    circuit.add_bus("Bus 3", 138.0,bus_type=BusType.PQ)
     circuit.add_transformer("T12",
         bus1_name="Bus 1", bus2_name="Bus 2", r=0.01, x=0.1)
     circuit.add_transmission_line("Line 1",\
