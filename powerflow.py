@@ -2,7 +2,6 @@
 import numpy as np
 import warnings
 from bus import BusType
-from jacobian import Jacobian  # Milestone 7
 
 class PowerFlow:
     """
@@ -22,32 +21,41 @@ class PowerFlow:
         self.converged = False
         self.iterations = 0
         self.mismatch_history = []
+        self.J1 = self.J2 = self.J3 = self.J4 = self.J = None
 
     # ------------------------------------------------------------------
     # Milestone 6 helpers: power injections and mismatch vector
     # ------------------------------------------------------------------
 
-    def _calc_Pi(self, i, ybus, angles, voltages):
-        """Real power injection at bus i (Milestone 6, Eq. 2)."""
-        Vi = voltages[i]
-        total = 0.0
-        for j in range(len(voltages)):
-            dij = angles[i] - angles[j]
-            total += voltages[j] * (
-                ybus[i, j].real * np.cos(dij) + ybus[i, j].imag * np.sin(dij)
-            )
-        return Vi * total
+    def _get_voltage_setpoints(self, buses):
+        return np.array([
+            float(getattr(bus, "voltage_setpoint", getattr(bus, "vpu", 1.0)))
+            for bus in buses.values()
+        ], dtype=float)
 
-    def _calc_Qi(self, i, ybus, angles, voltages):
-        """Reactive power injection at bus i (Milestone 6, Eq. 3)."""
-        Vi = voltages[i]
-        total = 0.0
-        for j in range(len(voltages)):
-            dij = angles[i] - angles[j]
-            total += voltages[j] * (
-                ybus[i, j].real * np.sin(dij) - ybus[i, j].imag * np.cos(dij)
-            )
-        return Vi * total
+    def _get_power_specs(self, buses):
+        p_spec = np.array([
+            float(getattr(bus, "P_spec", getattr(bus, "p_spec", 0.0)))
+            for bus in buses.values()
+        ], dtype=float)
+        q_spec = np.array([
+            float(getattr(bus, "Q_spec", getattr(bus, "q_spec", 0.0)))
+            for bus in buses.values()
+        ], dtype=float)
+        return p_spec, q_spec
+
+    def _calc_power_injections(self, ybus_np, angles, voltages):
+        """Vectorized real and reactive power injections for all buses."""
+        G = ybus_np.real
+        B = ybus_np.imag
+        dtheta = angles[:, None] - angles[None, :]
+        cos_d = np.cos(dtheta)
+        sin_d = np.sin(dtheta)
+        VV = voltages[:, None] * voltages[None, :]
+
+        P = np.sum(VV * (G * cos_d + B * sin_d), axis=1)
+        Q = np.sum(VV * (G * sin_d - B * cos_d), axis=1)
+        return P, Q
 
     def _compute_mismatch(self, buses, ybus_np, angles, voltages):
         """
@@ -69,26 +77,63 @@ class PowerFlow:
             Adjust 'bus.P_spec' and 'bus.Q_spec' to match the attribute names
             used in your Bus class for scheduled real and reactive power.
         """
-        bus_names = list(buses.keys())
-        f = []
+        bus_types = np.array([bus.bus_type for bus in buses.values()], dtype=object)
+        ns = np.flatnonzero(bus_types != BusType.Slack)
+        pq = np.flatnonzero(bus_types == BusType.PQ)
+        p_spec, q_spec = self._get_power_specs(buses)
+        P, Q = self._calc_power_injections(ybus_np, angles, voltages)
 
-        # ΔP for all non-slack buses
-        for i, name in enumerate(bus_names):
-            bus = buses[name]
-            if bus.bus_type == BusType.SLACK:
-                continue
-            Pi_calc = self._calc_Pi(i, ybus_np, angles, voltages)
-            f.append(bus.P_spec - Pi_calc)
+        return np.concatenate([p_spec[ns] - P[ns], q_spec[pq] - Q[pq]])
 
-        # ΔQ for PQ buses only
-        for i, name in enumerate(bus_names):
-            bus = buses[name]
-            if bus.bus_type != BusType.PQ:
-                continue
-            Qi_calc = self._calc_Qi(i, ybus_np, angles, voltages)
-            f.append(bus.Q_spec - Qi_calc)
+    def calc_jacobian(self, buses, ybus, angles, voltages):
+        """Build the full Jacobian matrix for a Newton-Raphson iteration."""
+        ybus_np = ybus.values if hasattr(ybus, "values") else np.asarray(ybus)
+        bus_types = np.array([bus.bus_type for bus in buses.values()], dtype=object)
+        ns = np.flatnonzero(bus_types != BusType.Slack)
+        pq = np.flatnonzero(bus_types == BusType.PQ)
 
-        return np.array(f)
+        G = ybus_np.real
+        B = ybus_np.imag
+        dtheta = angles[:, None] - angles[None, :]
+        cos_d = np.cos(dtheta)
+        sin_d = np.sin(dtheta)
+        VV = voltages[:, None] * voltages[None, :]
+        voltage_sq = voltages ** 2
+        P, Q = self._calc_power_injections(ybus_np, angles, voltages)
+        p_over_v = np.divide(
+            P,
+            voltages,
+            out=np.zeros_like(voltages),
+            where=voltages != 0,
+        )
+        q_over_v = np.divide(
+            Q,
+            voltages,
+            out=np.zeros_like(voltages),
+            where=voltages != 0,
+        )
+
+        H = VV * (G * sin_d - B * cos_d)
+        np.fill_diagonal(H, -Q - np.diagonal(B) * voltage_sq)
+        self.J1 = H[np.ix_(ns, ns)]
+
+        N = voltages[:, None] * (G * cos_d + B * sin_d)
+        np.fill_diagonal(N, p_over_v + np.diagonal(G) * voltages)
+        self.J2 = N[np.ix_(ns, pq)]
+
+        Jm = -VV * (G * cos_d + B * sin_d)
+        np.fill_diagonal(Jm, P - np.diagonal(G) * voltage_sq)
+        self.J3 = Jm[np.ix_(pq, ns)]
+
+        L = voltages[:, None] * (G * sin_d - B * cos_d)
+        np.fill_diagonal(L, q_over_v - np.diagonal(B) * voltages)
+        self.J4 = L[np.ix_(pq, pq)]
+
+        self.J = np.block([
+            [self.J1, self.J2],
+            [self.J3, self.J4],
+        ])
+        return self.J
 
     # ------------------------------------------------------------------
     # Main solver
@@ -118,34 +163,27 @@ class PowerFlow:
         """
         ybus_np   = ybus.values if hasattr(ybus, "values") else np.asarray(ybus)
         bus_names = list(buses.keys())
-        N         = len(bus_names)
+        N = len(bus_names)
+        bus_types = np.array([bus.bus_type for bus in buses.values()], dtype=object)
+        voltage_setpoints = self._get_voltage_setpoints(buses)
 
         # ---- Flat start: |V| = 1.0 pu, δ = 0.0 rad for all buses ----
         voltages = np.ones(N)
-        angles   = np.zeros(N)
+        angles = np.zeros(N)
 
         # PV and slack buses hold their specified voltage magnitude
-        for i, name in enumerate(bus_names):
-            bus = buses[name]
-            if bus.bus_type in (BusType.PV, BusType.SLACK):
-                voltages[i] = bus.voltage_setpoint
+        hold_voltage_mask = (bus_types == BusType.PV) | (bus_types == BusType.Slack)
+        voltages[hold_voltage_mask] = voltage_setpoints[hold_voltage_mask]
 
         # Positional index lists (consistent with ybus ordering)
-        non_slack_idx = [
-            i for i, n in enumerate(bus_names)
-            if buses[n].bus_type != BusType.SLACK
-        ]
-        pq_idx = [
-            i for i, n in enumerate(bus_names)
-            if buses[n].bus_type == BusType.PQ
-        ]
+        non_slack_idx = np.flatnonzero(bus_types != BusType.Slack)
+        pq_idx = np.flatnonzero(bus_types == BusType.PQ)
 
         n_non_slack = len(non_slack_idx)
 
-        jac = Jacobian()
         self.mismatch_history = []
-        self.converged        = False
-        self.iterations       = 0
+        self.converged = False
+        self.iterations = 0
 
         for iteration in range(max_iter):
 
@@ -164,7 +202,7 @@ class PowerFlow:
                 break
 
             # Step 2 — Jacobian matrix (Milestone 7)
-            J = jac.calc_jacobian(buses, ybus_np, angles, voltages)
+            J = self.calc_jacobian(buses, ybus_np, angles, voltages)
 
             # Step 3 — Solve linear system  J · Δx = f
             try:
