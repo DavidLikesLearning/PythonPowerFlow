@@ -1,5 +1,5 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "python.defaultInterpreterPath": "/home/bakry/classes/PythonPowerFlow/.venv/bin/python",
     "terminal.integrated.profiles.windows": {
         "WSL": {
             "path": "C:\\Windows\\System32\\wsl.exe",
