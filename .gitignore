@@ -9,3 +9,4 @@ __pycache__/
 .venv/
 .vscode/
 .vscode/settings.json
+git-cheatsheet.md
