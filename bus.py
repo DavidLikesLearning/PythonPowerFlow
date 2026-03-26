@@ -100,8 +100,8 @@ class Bus:
 
     @delta.setter
     def delta(self, value: float) -> None:
-        if not isinstance(value, float) or value<0:
-            raise ValueError("delta must be positive float")
+        if not isinstance(value, float):
+            raise ValueError("delta must be float")
         self._delta = value
 
     # --- delta ---

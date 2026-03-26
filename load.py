@@ -13,26 +13,26 @@ class Load:
 
     Attributes:
         name: Identifier for the load.
-        bus1_name: Bus name where the load is connected.
+        bus_name: Bus name where the load is connected.
         mw: Real power (megawatts).
         mvar: Reactive power (megavolt-amperes reactive).
         mva: Apparent power (megavolt-amperes), computed as sqrt(mw^2 + mvar^2).
     """
 
-    def __init__(self, name: str, bus1_name: str, mw: float, mvar: float):
+    def __init__(self, name: str, bus_name: str, mw: float, mvar: float):
         self._name = name
-        self._bus1_name = bus1_name
+        self._bus_name = bus_name
         self._mw = mw
         self._mvar = mvar
         self._p = None  # will be set by calc_p()
         self._q = None  # will be set by calc_q()
-        self._validate_params(name, bus1_name, mw, mvar)
+        self._validate_params(name, bus_name, mw, mvar)
 
     def __repr__(self) -> str:
         # Unambiguous, developer-focused, ideally reconstructable representation
         return (
             f"Load(name={self._name!r}, "
-            f"bus1_name={self._bus1_name!r}, "
+            f"bus_name={self._bus_name!r}, "
             f"mw={self._mw!r}, mvar={self._mvar!r})"
         )
 
@@ -40,18 +40,18 @@ class Load:
         # Human-readable summary
         return (
             f"Load {self._name} "
-            f"at {self._bus1_name}: "
+            f"at {self._bus_name}: "
             f"mw={self._mw} MW, mvar={self._mvar} MVAr, mva={self.mva:.6f} MVA"
         )
 
-    def _validate_params(self, name: str, bus1_name: str,
+    def _validate_params(self, name: str, bus_name: str,
                          mw: float, mvar: float) -> None:
         if (not isinstance(name, str) or
-                not isinstance(bus1_name, str)):
-            raise ValueError("name and bus1_name must be non-empty strings")
+                not isinstance(bus_name, str)):
+            raise ValueError("name and bus_name must be non-empty strings")
 
-        if name == "" or bus1_name == "":
-            raise ValueError("name and bus1_name must be non-empty strings")
+        if name == "" or bus_name == "":
+            raise ValueError("name and bus_name must be non-empty strings")
 
         # No specific constraints on mw and mvar values (can be positive, negative, or zero)
     def calc_p(self) -> float:
@@ -81,16 +81,16 @@ class Load:
             raise ValueError("name must be a non-empty string")
         self._name = value.strip()
 
-    # --- bus1_name ---
+    # --- bus_name ---
     @property
-    def bus1_name(self) -> str:
-        return self._bus1_name
+    def bus_name(self) -> str:
+        return self._bus_name
 
-    @bus1_name.setter
-    def bus1_name(self, value: str) -> None:
+    @bus_name.setter
+    def bus_name(self, value: str) -> None:
         if not isinstance(value, str) or not value.strip():
-            raise ValueError("bus1_name must be a non-empty string")
-        self._bus1_name = value.strip()
+            raise ValueError("bus_name must be a non-empty string")
+        self._bus_name = value.strip()
 
     # --- mw ---
     @property
