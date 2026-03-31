@@ -1051,19 +1051,6 @@ def test_orig_jacobian():
 
     assert match, "Jacobian disagree from beginning"
 
-def test_newton_raphson_steps():
-    circuit = case6_9()
-    circuit._run_single_power_flow()
-    match_j, diff_j, _, _ = compare_jacobians(
-        circuit,'jacobian1_case69.xlsx', tol = 0.01)
-    match_m, mis_df = compare_mismatch(
-        circuit, "mismatch1_case69.xlsx", tol = 0.01)
-    buses, bus_names, ybus, angles, voltages = circuit._get_data()
-    # print("\nfirst round angles, voltages\n", np.rad2deg(angles), voltages)
-    # print("\njacobian diff:\n",diff_j)
-    # print("\nmismatch diff:\n",mis_df)
-    # assert match_m, "Mismatches at one NR step"
-    # assert match_j, "Jacobian at one NR step"
 
 if __name__ == "__main__":
     circuit = case6_9()
