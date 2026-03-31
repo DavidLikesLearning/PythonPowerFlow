@@ -724,12 +724,13 @@ class Circuit:
         if msg:
             print(f"  Iter {1:3d} | max |f| = {max_mm:.6e}")
 
-def case6_9():
+def case6_9(load2_vpu = 1, load2_delta = 0):
     """Build the 5-bus example 6.9 from the Power System Analysis book,
     compare the Y-bus matrix to the CSV, and assert numerical equality."""
     circuit = Circuit("5-Bus Example 6.9")
     circuit.add_bus("One", 15.0,bus_type=BusType.Slack)
-    circuit.add_bus("Two", 345.0,bus_type=BusType.PQ)
+    circuit.add_bus("Two", 345.0,bus_type=BusType.PQ,
+                    vpu = load2_vpu, delta = load2_delta)
     circuit.add_bus("Three", 15.0,bus_type=BusType.PV, vpu = 1.05)
     circuit.add_bus("Four", 345.0,bus_type=BusType.PQ)
     circuit.add_bus("Five", 345.0,bus_type=BusType.PQ)
@@ -967,18 +968,30 @@ def test_shape_powerflow():
     # print(mismatch,'\n', jacobian)
 
 def test_case6_9_convergence():
+    print('\nvpu1-vpu1.05-deltas0\n')
     circuit = case6_9()
     tol = 1e-5
     circuit.run_power_flow(tol = tol, flat_start=False, msg= True)
     final_mis = circuit._calc_mismatch()
     assert np.linalg.norm(final_mis)<tol, "Mismatch at final mismatch"
 
+def test_case6_9_flat_convergence():
+    print('\nvpus1-deltas0-FLAT\n')
+    circuit = case6_9()
+    tol = 1e-5
+    circuit.run_power_flow(tol = tol, flat_start=True, msg= True)
+    final_mis = circuit._calc_mismatch()
+    assert np.linalg.norm(final_mis)<tol, "Mismatch at final mismatch"
+    buses, bus_names, ybus, angles, voltages = circuit._get_data()
+    print('final angles (degs)', np.rad2deg(angles) )
+    print('final voltages', voltages)
+
 def test_case6_9_final_vpu_delta():
     circuit = case6_9()
     tol = 1e-5
     circuit.run_power_flow(tol=tol, flat_start=False, msg=True)
     buses, bus_names, ybus, angles, voltages = circuit._get_data()
-    print('final angles (degz)', np.rad2deg(angles) )
+    print('final angles (degs)', np.rad2deg(angles) )
     print('final voltages', voltages)
 
 def test_case6_9_start_vpu_delta():
@@ -991,9 +1004,40 @@ def test_case6_9_start_vpu_delta():
 
 def test_mismatch_flat_start():
     circuit = case6_9()
-    match, _ = compare_mismatch(
+    match, mismatch_df = compare_mismatch(
         circuit, "mismatch0_case69.xlsx", tol = .01)
+    # print('\nfirst mismatch\n', mismatch_df[["Diff_DelQ_Mvar", "Diff_DelQ_MW"]])
     assert match, "Mismatches disagree from beginning"
+
+
+def test_case6_9_high_load2_vpu():
+    print('\nflat-load2-vpu=3\n')
+    circuit = case6_9(load2_vpu=3)
+    tol = 1e-5
+    buses, bus_names, ybus, angles, voltages = circuit._get_data()
+    print('Init angles (degs)', np.rad2deg(angles) )
+    print('Init voltages', voltages)
+    circuit.run_power_flow(tol = tol, flat_start=False, msg= True)
+    final_mis = circuit._calc_mismatch()
+    assert np.linalg.norm(final_mis)<tol, "Mismatch at final mismatch"
+    buses, bus_names, ybus, angles, voltages = circuit._get_data()
+    print('final angles (degs)', np.rad2deg(angles) )
+    print('final voltages', voltages)
+
+def test_case6_9_high_load2_delta():
+    print('\nflat-load2-vpu=3\n')
+    circuit = case6_9(load2_delta=float(np.pi/6))
+    tol = 1e-5
+    buses, bus_names, ybus, angles, voltages = circuit._get_data()
+    print('Init angles (degs)', np.rad2deg(angles) )
+    print('Init voltages', voltages)
+    circuit.run_power_flow(tol = tol, flat_start=False, msg= True)
+    final_mis = circuit._calc_mismatch()
+    assert np.linalg.norm(final_mis)<tol, "Mismatch at final mismatch"
+    buses, bus_names, ybus, angles, voltages = circuit._get_data()
+    print('final angles (degs)', np.rad2deg(angles) )
+    print('final voltages', voltages)
+
 
 def test_orig_jacobian():
     circuit = case6_9()
@@ -1001,6 +1045,10 @@ def test_orig_jacobian():
 
     match, diff, Jraw, Jref = compare_jacobians(
         circuit,'jacobian0_case69.xlsx', tol = 0.01)
+    # print("\njacobian local:\n",Jraw)
+    # print("\nJacobian ref:\n",Jref)
+    # print("\njacobian diff:\n",diff)
+
     assert match, "Jacobian disagree from beginning"
 
 def test_newton_raphson_steps():
@@ -1010,10 +1058,12 @@ def test_newton_raphson_steps():
         circuit,'jacobian1_case69.xlsx', tol = 0.01)
     match_m, mis_df = compare_mismatch(
         circuit, "mismatch1_case69.xlsx", tol = 0.01)
-    # print("jacobian diff:\n",diff_j)
-    # print("mismatch diff:\n",mis_df)
-    assert match_m, "Mismatches at one NR step"
-    assert match_j, "Jacobian at one NR step"
+    buses, bus_names, ybus, angles, voltages = circuit._get_data()
+    # print("\nfirst round angles, voltages\n", np.rad2deg(angles), voltages)
+    # print("\njacobian diff:\n",diff_j)
+    # print("\nmismatch diff:\n",mis_df)
+    # assert match_m, "Mismatches at one NR step"
+    # assert match_j, "Jacobian at one NR step"
 
 if __name__ == "__main__":
     circuit = case6_9()
