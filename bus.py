@@ -31,7 +31,8 @@ class Bus:
     
     _bus_index = 1  # Class variable to track next available index
     
-    def __init__(self, name: str, nominal_kv: float, bus_type: BusType) -> None:
+    def __init__(self, name: str, nominal_kv: float, bus_type: BusType,
+                 vpu: float = 1.0, delta: float = 0.0) -> None:
         """
         Initialize a Bus instance.
         
@@ -47,8 +48,8 @@ class Bus:
         Bus._bus_index += 1
         self._nominal_kv = nominal_kv  # Initial voltage, to be set by solver # remove attribute direct access
         self._bus_type = bus_type
-        self._delta = 0.0
-        self._vpu = 1.0
+        self._delta =delta
+        self._vpu = vpu
         self._v = nominal_kv * self._vpu  # Internal variable to store voltage, set by solver
         self._validate_params()
 

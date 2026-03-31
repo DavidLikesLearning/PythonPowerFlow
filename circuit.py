@@ -162,13 +162,16 @@ class Circuit:
         return self._y_bus
 
 
-    def add_bus(self, name: str, nominal_kv: float, bus_type: BusType) -> None:
+    def add_bus(self, name: str, nominal_kv: float, bus_type: BusType,
+                vpu:float = 1.0, delta: float= 0.0) -> None:
         """
         Add a bus to the circuit.
 
         Args:
             name: Bus name (must be unique within buses).
             nominal_kv: Nominal voltage in kV.
+            vpu: set voltage in pu
+            delta: set angle in radians
 
         Raises:
             ValueError: If a bus with the same name already exists.
@@ -176,7 +179,7 @@ class Circuit:
         if name in self._buses:
             raise ValueError(f"Bus '{name}' already exists in circuit")
 
-        self._buses[name] = Bus(name, nominal_kv, bus_type=bus_type)
+        self._buses[name] = Bus(name, nominal_kv, bus_type, vpu, delta)
         self._bus_index[name] = Bus._bus_index
 
     def add_transformer(self, name: str, bus1_name: str, bus2_name: str,
@@ -245,24 +248,26 @@ class Circuit:
         if name in self._generators:
             raise ValueError(f"Generator '{name}' already exists in circuit")
 
+        if bus_name not in self.buses:
+            raise ValueError(f"Bus '{bus_name}' doesn't exists in circuit")
         self._generators[name] = Generator(name, bus_name, mw_setpoint, voltage_setpoint)
+        self.buses[bus_name].vpu = voltage_setpoint
 
-    def add_load(self, name: str, bus1_name: str, mw: float, mvar: float) -> None:
+    def add_load(self, name: str, bus_name: str, mw: float, mvar: float) -> None:
         """
         Add a load to the circuit.
 
         Args:
             name: Load name (must be unique within loads).
-            bus1_name: Bus name where load is connected.
+            bus_name: Bus name where load is connected.
             mw: Active power in MW.
             mvar: Reactive power in MVAr.
-
         Raises:
             ValueError: If a load with the same name already exists.
         """
         if name in self._loads:
             raise ValueError(f"Load '{name}' already exists in circuit")
-        self._loads[name] = Load(name, bus1_name, mw, mvar)
+        self._loads[name] = Load(name, bus_name, mw, mvar)
 
     def _calc_Pi(self, i, ybus, angles, voltages):
         """Real power injection at bus i (Milestone 6, Eq. 2)."""
@@ -602,7 +607,8 @@ class Circuit:
             bus = buses[name]
             bus.vpu = bus.vpu + voltage_corrections[i]
 
-    def run_power_flow(self, tol=0.001, max_iter=50, flat_start=True):
+    def run_power_flow(self, tol=0.001, max_iter=50, flat_start=False,
+                       msg = False):
         """
         Solve the power flow iteratively using Newton-Raphson.
 
@@ -631,7 +637,8 @@ class Circuit:
         # ── Check initial mismatch before any updates ────────────────────────────
         mismatch = self._calc_mismatch()
         max_mm = np.max(np.abs(mismatch))
-        print(f"  Iter   0 | max |f| = {max_mm:.6e}  (initial)")
+        if msg:
+            print(f"  Iter   0 | max |f| = {max_mm:.6e}  (initial)")
 
         if max_mm < tol:
             print("  Initial guess already satisfies convergence tolerance.")
@@ -654,7 +661,8 @@ class Circuit:
             # Step 4 – recompute mismatch and check convergence
             mismatch = self._calc_mismatch()
             max_mm = np.max(np.abs(mismatch))
-            print(f"  Iter {iteration:3d} | max |f| = {max_mm:.6e}")
+            if msg:
+                print(f"  Iter {iteration:3d} | max |f| = {max_mm:.6e}")
 
             if max_mm < tol:
                 print(f"\n  ✓ Converged in {iteration} Newton-Raphson iteration(s).")
@@ -667,6 +675,54 @@ class Circuit:
         )
         return False
 
+    def _run_single_power_flow(self, tol=0.001, max_iter=50, flat_start=False,
+                               msg = False):
+        """
+        One iteration of Newton-Raphson.
+
+        Flat start (default): all non-slack angles → 0.0 rad,
+                              all PQ bus voltages  → 1.0 pu.
+        PV bus voltages are left at their generator setpoint.
+
+        Args:
+            tol        : float — mismatch convergence tolerance (default 1e-3)
+            max_iter   : int   — maximum number of NR iterations  (default 50)
+            flat_start : bool  — reset voltages/angles before iterating (default True)
+
+        Returns:
+            True if converged, False otherwise.
+        """
+        # ── Flat start initialisation ────────────────────────────────────────────
+        if flat_start:
+            for bus in self.buses.values():
+                if bus.bus_type != BusType.Slack:
+                    bus.delta = 0.0
+                if bus.bus_type == BusType.PQ:
+                    bus.vpu = 1.0
+
+        mismatch = self._calc_mismatch()
+        max_mm = np.max(np.abs(mismatch))
+        if msg:
+            print(f"  Iter   0 | max |f| = {max_mm:.6e}  (initial)")
+
+        # ── Newton-Raphson once ────────────────────────────────────────
+
+        # compute Jacobian at current operating point
+        jacobian = self._calc_jacobian()
+
+        # solve J·Δx = f; get corrections + bus index lists
+        angle_corr, volt_corr, pv_list, pq_list = self.newton_raphson_step(
+            mismatch, jacobian
+        )
+
+        # Step 3 – apply corrections to each bus
+        self.apply_bus_updates(angle_corr, volt_corr, pv_list, pq_list)
+
+        # Step 4 – recompute mismatch and check convergence
+        mismatch = self._calc_mismatch()
+        max_mm = np.max(np.abs(mismatch))
+        if msg:
+            print(f"  Iter {1:3d} | max |f| = {max_mm:.6e}")
 
 def case6_9():
     """Build the 5-bus example 6.9 from the Power System Analysis book,
@@ -674,26 +730,230 @@ def case6_9():
     circuit = Circuit("5-Bus Example 6.9")
     circuit.add_bus("One", 15.0,bus_type=BusType.Slack)
     circuit.add_bus("Two", 345.0,bus_type=BusType.PQ)
-    circuit.add_bus("Three", 15.0,bus_type=BusType.PV)
+    circuit.add_bus("Three", 15.0,bus_type=BusType.PV, vpu = 1.05)
     circuit.add_bus("Four", 345.0,bus_type=BusType.PQ)
     circuit.add_bus("Five", 345.0,bus_type=BusType.PQ)
-
     circuit.add_transmission_line("L42", "Four", "Two", r=0.009, x=0.1,  b=1.72)
     circuit.add_transmission_line("L52", "Five", "Two", r=0.0045, x=0.05, b=0.88)
     circuit.add_transmission_line("L54", "Five", "Four", r=0.00225, x=0.025, b=0.44)
-
     circuit.add_transformer("T15", "One", "Five", r=0.0015, x=0.02)
     circuit.add_transformer("T34", "Three", "Four", r=0.00075, x=0.01)
 
-    circuit.calc_ybus()
-
     circuit.add_load('TwoL', 'Two', 800, 280)
     circuit.add_load('ThreeL', 'Three', 80, 40)
-
-    circuit.add_generator('OneG', 'One', 1, 395)
+    circuit.add_generator('OneG', 'One', 1.0, 395)
     circuit.add_generator('ThreeG', 'Three', 1.05, 520)
+
+    circuit.calc_ybus()
     return circuit
 
+def _jacobian_labels(circuit):
+    """Return (row_labels, col_labels) matching calc_jacobian()'s layout.
+
+    Layout
+    ------
+    Rows : dP/<bus>  for every non-slack bus  (pvbuses order)
+           dQ/<bus>  for every PQ bus          (pqbuses order)
+    Cols : delta_<bus>   for every non-slack bus  (pvbuses order)
+           voltmag_<bus> for every PQ bus          (pqbuses order)
+    """
+    buses, busnames, _, _, _ = circuit._get_data()
+    pv_list = circuit._pv_buses(busnames, buses)
+    pq_list = circuit._pq_buses(busnames, buses)
+
+    row_labels = [f"dP/{n}" for n in pv_list] + [f"dQ/{n}" for n in pq_list]
+    col_labels = [f"delta_{n}" for n in pv_list] + [f"voltmag_{n}" for n in pq_list]
+    return row_labels, col_labels
+
+def compare_jacobians(circuit, excel_path: str, tol: float = 1e-2):
+    """
+    Compare computed Jacobian against a reference Excel.
+    Both matrices are aligned positionally — no label matching.
+
+    Canonical order
+    ---------------
+    Rows : dP for non-slack buses (ascending bus number)
+           dQ for PQ buses        (ascending bus number)
+    Cols : |V| for PQ buses       (ascending bus number)
+           delta for non-slack buses (ascending bus number)
+    """
+    buses, bus_names, ybus, angles, voltages = circuit._get_data()
+    idx     = circuit._bus_index          # name -> 0-based insertion index
+    pv_list = circuit._pv_buses(bus_names, buses)   # non-slack, already sorted
+    pq_list = circuit._pq_buses(bus_names, buses)   # PQ only,   already sorted
+    n_pv, n_pq = len(pv_list), len(pq_list)
+
+    # 1-indexed bus numbers aligned with the reference Excel numbering
+    bus_num   = {n: idx[n] + 1 for n in bus_names}
+    slack_set = {bus_num[n] for n in bus_names
+                 if buses[n].bus_type == BusType.Slack}
+    pq_nums   = sorted(bus_num[n] for n in pq_list)
+    pv_nums   = sorted(bus_num[n] for n in pv_list)
+
+    # ── Generated Jacobian ──────────────────────────────────────────────
+    # _calc_jacobian() col layout: [delta pv_list... | voltmag pq_list...]
+    # Desired layout:              [voltmag pq_list... | delta pv_list...]
+    J_raw  = circuit._calc_jacobian()
+    col_perm = list(range(n_pv, n_pv + n_pq)) + list(range(n_pv))
+    J_computed = J_raw[:, col_perm]
+
+    # ── Reference Excel ─────────────────────────────────────────────────
+    # header=1  → skip row-0 ("Bus","Unnamed:1",...) and use row-1 as header
+    #             giving cols: "Name","Jacobian Equation","Angle Bus X","Volt Mag Bus X"
+    # index_col=0 → bus numbers (1-5) become the index
+    ref_raw = pd.read_excel(excel_path, header=1, index_col=0)
+
+    # dP rows: "Real Power ..." entries, excluding the slack bus
+    dp_mask = (ref_raw["Jacobian Equation"].str.contains("Real Power", na=False) &
+               ~ref_raw.index.isin(slack_set))
+    dp_part = ref_raw[dp_mask].sort_index()   # ascending bus number
+
+    # dQ rows: "Reactive Power" entries (PQ buses only)
+    dq_mask = ref_raw["Jacobian Equation"].str.contains("Reactive Power", na=False)
+    dq_part = ref_raw[dq_mask].sort_index()   # ascending bus number
+
+    # Select & reorder columns to match canonical [|V| PQ | delta non-slack]
+    volt_cols  = [f"Volt Mag Bus {b}" for b in pq_nums]
+    angle_cols = [f"Angle Bus {b}"    for b in pv_nums]
+    J_ref = (pd.concat([dp_part, dq_part])[volt_cols + angle_cols]
+               .astype(float)
+               .fillna(0.0)      # NaN in reference = no coupling = 0
+               .values)
+
+    # ── Element-wise comparison ─────────────────────────────────────────
+    diff  = J_computed - J_ref
+    match = bool(np.all(np.abs(diff) <= tol))
+
+    # Human-readable labels (for display only — not used for alignment)
+    row_labels = ([f"dP/Bus{bus_num[n]}" for n in pv_list] +
+                  [f"dQ/Bus{bus_num[n]}" for n in pq_list])
+    col_labels = ([f"|V|_Bus{b}" for b in pq_nums] +
+                  [f"d_Bus{b}"   for b in pv_nums])
+
+    computed_df = pd.DataFrame(J_computed, index=row_labels, columns=col_labels)
+    ref_df_out  = pd.DataFrame(J_ref,      index=row_labels, columns=col_labels)
+    diff_df     = pd.DataFrame(diff,        index=row_labels, columns=col_labels)
+
+    return match, diff_df, J_computed, J_ref
+
+def compare_mismatch(
+    circuit,
+    excel_path: str,
+    tol: float = 1.0,
+    sheet_name: str = "Sheet1"
+):
+    """
+    Compare the mismatch vector produced by _calc_mismatch() against a
+    reference Excel file (format: mismatch0_case69-2.xlsx).
+
+    The circuit mismatch is computed in per-unit and scaled by ``sbase``
+    to match the MW / Mvar values stored in the reference file.
+
+    Excel layout expected
+    ---------------------
+    Row 0  : "Bus" (merged title — skipped)
+    Row 1  : Number | Name | Area Name | Type |
+              Mismatch MW | Mismatch Mvar | Mismatch MVA   ← used as header
+    Row 2+ : one row per bus
+
+    Mismatch vector layout from _calc_mismatch()
+    --------------------------------------------
+    [ ΔP  for all non-slack buses  (sorted by bus index)  ]
+    [ ΔQ  for PQ buses only        (sorted by bus index)  ]
+
+    Reconstruction per bus
+    ----------------------
+    Slack   → ΔP_MW = 0,    ΔQ_Mvar = 0   (excluded from NR mismatch)
+    PV      → ΔP_MW = f[i], ΔQ_Mvar = 0   (voltage is controlled)
+    PQ      → ΔP_MW = f[i], ΔQ_Mvar = f[j]
+
+    Parameters
+    ----------
+    circuit    : Circuit instance (Y-bus must be built, buses initialised)
+    excel_path : Path to the reference .xlsx / .xls file
+    tol        : Absolute tolerance in MW or Mvar (default 1.0)
+    sheet_name : Excel sheet to read (default "Sheet1")
+
+    Returns
+    -------
+    match     : bool        — True when every |computed - reference| ≤ tol
+    result_df : DataFrame   — per-bus table with computed, reference and
+                              difference columns for both ΔP and ΔQ
+    diff_df   : DataFrame   — only the difference columns (ΔP_diff, ΔQ_diff)
+    """
+    sbase = grid_settings.sbase  # MVA base (typically 100)
+
+    # ── Compute mismatch and retrieve bus ordering ──────────────────────
+    mismatch_pu = circuit._calc_mismatch()          # shape: (n_pv + n_pq,)
+
+    buses, bus_names, _, _, _ = circuit._get_data()
+    pv_list = circuit._pv_buses(bus_names, buses)   # all non-slack (PV + PQ)
+    pq_list = circuit._pq_buses(bus_names, buses)   # PQ only
+
+    n_pv = len(pv_list)
+
+    # Scale from per-unit to MW / Mvar
+    delta_P_mw   = mismatch_pu[:n_pv] * sbase       # one entry per non-slack bus
+    delta_Q_mvar = mismatch_pu[n_pv:] * sbase        # one entry per PQ bus
+
+    # Build per-bus lookup dictionaries  {bus_name: value}
+    computed_DeltaP = {name: delta_P_mw[i]   for i, name in enumerate(pv_list)}
+    computed_DeltaQ = {name: delta_Q_mvar[i] for i, name in enumerate(pq_list)}
+
+    # ── Read the reference Excel ────────────────────────────────────────
+    ref = pd.read_excel(
+        excel_path,
+        sheet_name=sheet_name,
+        header=1,           # row-1 ("Number", "Name", …) is the column header
+        index_col=None,
+    )
+    ref.columns = [
+        "Number", "Name", "Area", "Type",
+        "Ref_DelP_MW", "Ref_DelQ_Mvar", "Ref_DelS_MVA",
+    ]
+    ref = ref.dropna(subset=["Name"])  # remove any stray blank rows
+
+    # ── Align computed values onto the reference table row by row ───────
+    computed_DeltaP_col, computed_DeltaQ_col = [], []
+
+    for _, row in ref.iterrows():
+        name = str(row["Name"]).strip()
+        bus  = buses.get(name)
+
+        if bus is None:                          # bus not found in circuit
+            computed_DeltaP_col.append(float("nan"))
+            computed_DeltaQ_col.append(float("nan"))
+            continue
+
+        if bus.bus_type == BusType.Slack:        # slack excluded from NR mismatch
+            computed_DeltaP_col.append(0.0)
+            computed_DeltaQ_col.append(0.0)
+        elif bus.bus_type == BusType.PV:         # PV: ΔP only, voltage is fixed
+            computed_DeltaP_col.append(computed_DeltaP.get(name, float("nan")))
+            computed_DeltaQ_col.append(0.0)
+        else:                                    # PQ: both ΔP and ΔQ
+            computed_DeltaP_col.append(computed_DeltaP.get(name, float("nan")))
+            computed_DeltaQ_col.append(computed_DeltaQ.get(name, float("nan")))
+
+    ref = ref.copy()
+    ref["Comp_DelP_MW"]   = computed_DeltaP_col
+    ref["Comp_DelQ_Mvar"] = computed_DeltaQ_col
+    ref["Diff_DelP_MW"]   = ref["Comp_DelP_MW"]   - ref["Ref_DelP_MW"]
+    ref["Diff_DelQ_Mvar"] = ref["Comp_DelQ_Mvar"] - ref["Ref_DelQ_Mvar"]
+
+    # ── Evaluate tolerance ──────────────────────────────────────────────
+    diffs = ref[["Diff_DelP_MW", "Diff_DelQ_Mvar"]].dropna()
+    match = bool((diffs.abs() <= tol).all().all())
+
+    # ── Build output DataFrames ─────────────────────────────────────────
+    display_cols = [
+        "Number", "Name", "Type",
+        "Ref_DelP_MW",   "Comp_DelP_MW",   "Diff_DelP_MW",
+        "Ref_DelQ_Mvar", "Comp_DelQ_Mvar", "Diff_DelQ_Mvar",
+    ]
+    result_df = ref[display_cols].reset_index(drop=True)
+
+    return match, result_df
 
 def test_shape_powerflow():
     circuit = case6_9()
@@ -706,12 +966,54 @@ def test_shape_powerflow():
     # print("Mismatch, Jacobian values:\n")
     # print(mismatch,'\n', jacobian)
 
-def test_case_6_9_convergence():
+def test_case6_9_convergence():
     circuit = case6_9()
-    tol = 0.00001
-    circuit.run_power_flow(tol = tol, flat_start=False)
+    tol = 1e-5
+    circuit.run_power_flow(tol = tol, flat_start=False, msg= True)
     final_mis = circuit._calc_mismatch()
     assert np.linalg.norm(final_mis)<tol, "Mismatch at final mismatch"
+
+def test_case6_9_final_vpu_delta():
+    circuit = case6_9()
+    tol = 1e-5
+    circuit.run_power_flow(tol=tol, flat_start=False, msg=True)
+    buses, bus_names, ybus, angles, voltages = circuit._get_data()
+    print('final angles (degz)', np.rad2deg(angles) )
+    print('final voltages', voltages)
+
+def test_case6_9_start_vpu_delta():
+    circuit = case6_9()
+    _, _, _, angles, voltages= circuit._get_data( )
+    assert np.linalg.norm(
+        angles - np.zeros(5))< 0.001, "angles start wrong"
+    assert np.linalg.norm(
+        voltages - np.array([1,1,1.05,1,1]))< 0.001, "voltages start wrong"
+
+def test_mismatch_flat_start():
+    circuit = case6_9()
+    match, _ = compare_mismatch(
+        circuit, "mismatch0_case69.xlsx", tol = .01)
+    assert match, "Mismatches disagree from beginning"
+
+def test_orig_jacobian():
+    circuit = case6_9()
+    # print(circuit._calc_jacobian())
+
+    match, diff, Jraw, Jref = compare_jacobians(
+        circuit,'jacobian0_case69.xlsx', tol = 0.01)
+    assert match, "Jacobian disagree from beginning"
+
+def test_newton_raphson_steps():
+    circuit = case6_9()
+    circuit._run_single_power_flow()
+    match_j, diff_j, _, _ = compare_jacobians(
+        circuit,'jacobian1_case69.xlsx', tol = 0.01)
+    match_m, mis_df = compare_mismatch(
+        circuit, "mismatch1_case69.xlsx", tol = 0.01)
+    # print("jacobian diff:\n",diff_j)
+    # print("mismatch diff:\n",mis_df)
+    assert match_m, "Mismatches at one NR step"
+    assert match_j, "Jacobian at one NR step"
 
 if __name__ == "__main__":
     circuit = case6_9()
