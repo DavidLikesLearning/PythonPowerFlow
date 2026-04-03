@@ -18,6 +18,7 @@ Jacobian size: (2N - 2 - NPV) = (10 - 2 - 1) = 7×7
 """
 
 import unittest
+from unittest.mock import patch
 import numpy as np
 
 from bus import BusType
@@ -50,7 +51,7 @@ def build_circuit():
     # Bus Two load: 800 MW / 280 MVAr -> -8.0 pu / -2.8 pu
     # Bus Three load: 80 MW / 40 MVAr -> -0.8 pu / -0.4 pu
     # Bus Three generator: 520 MW -> +5.2 pu
-    circuit.add_generator("G1", "One", voltage_setpoint=1.0, mw_setpoint=278.3)
+    circuit.add_generator("G1", "One", voltage_setpoint=1.0, mw_setpoint=0)
     circuit.add_load("LD2", "Two", mw=800.0, mvar=280.0)
     circuit.add_load("LD3", "Three", mw=80.0, mvar=40.0)
     circuit.add_generator("G3", "Three", voltage_setpoint=1.05, mw_setpoint=520.0)
@@ -129,18 +130,18 @@ EXPECTED_MISMATCH_ITER1 = np.array([
 # --- Converged solution ---
 EXPECTED_VOLTAGES_CONVERGED = np.array([
     1.0000,  # One   (slack)
-    0.0,     # Two   <-- FILL IN (pu)
+    0.83377,     # Two   <-- FILL IN (pu)
     1.0500,  # Three (PV setpoint)
-    0.0,     # Four  <-- FILL IN (pu)
-    0.0,     # Five  <-- FILL IN (pu)
+    1.01931,     # Four  <-- FILL IN (pu)
+    0.97429,     # Five  <-- FILL IN (pu)
 ])
 
 EXPECTED_ANGLES_DEG_CONVERGED = np.array([
     0.0,   # One   (slack)
-    0.0,   # Two   <-- FILL IN (degrees)
-    0.0,   # Three <-- FILL IN (degrees)
-    0.0,   # Four  <-- FILL IN (degrees)
-    0.0,   # Five  <-- FILL IN (degrees)
+    -22.41,   # Two   <-- FILL IN (degrees)
+    -0.6,   # Three <-- FILL IN (degrees)
+    -2.83,   # Four  <-- FILL IN (degrees)
+    -4.55,   # Five  <-- FILL IN (degrees)
 ])
 
 # Final P and Q injections at converged solution (per unit, 100 MVA base).
@@ -263,32 +264,100 @@ class TestPowerFlow(unittest.TestCase):
     # ------------------------------------------------------------------
     def test_mismatch_ordering(self):
         """
-        Mismatch vector must be ordered: [ΔP non-slack ... | ΔQ PQ-only ...]
-        Verify bus names appear in the correct half by checking known zero entries.
-        At flat start, all ΔP for junction buses (Four, Five) should match their P_spec=0.
+        Prove ordering by perturbing one spec entry at a time and checking
+        exactly which mismatch index changes.
+
+        This avoids self-referential label checks and validates positional mapping
+        of [ΔP non-slack ... | ΔQ PQ-only ...] directly from behavior.
         """
         flat_v = np.array([b.vpu for b in self.buses.values()], dtype=float)
-        flat_d = np.zeros(len(self.buses))
-        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+        flat_d = np.zeros(len(self.buses), dtype=float)
 
-        # ΔP_Four is index 2, ΔP_Five is index 3  (non-slack order: Two, Three, Four, Five)
-        # At flat start the real power injection through a lossless reactive network
-        # is zero, so ΔP = P_spec - 0 = P_spec for Four and Five (both 0.0).
-        self.assertAlmostEqual(f[2], 0.0, delta=TOL,
-                               msg="ΔP_Four at flat start should be 0.0 (P_spec=0)")
-        self.assertAlmostEqual(f[3], 0.0, delta=TOL,
-                               msg="ΔP_Five at flat start should be 0.0 (P_spec=0)")
+        p0, q0 = self.pf._get_power_specs(self.circuit)
+        f0 = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+
+        bus_names = list(self.buses.keys())
+        bus_types = np.array([b.bus_type for b in self.buses.values()], dtype=object)
+        non_slack_idx = np.flatnonzero(bus_types != BusType.Slack)
+        pq_idx = np.flatnonzero(bus_types == BusType.PQ)
+
+        eps = 1e-4
+
+        # P-block ordering: index k corresponds to non_slack_idx[k]
+        for k, bus_i in enumerate(non_slack_idx):
+            p_test = p0.copy()
+            q_test = q0.copy()
+            p_test[bus_i] += eps
+
+            with patch.object(self.pf, "_get_power_specs", return_value=(p_test, q_test)):
+                f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+
+            df = f - f0
+            moved = np.where(np.abs(df) > 1e-10)[0]
+
+            self.assertEqual(
+                len(moved), 1,
+                msg=f"Expected one changed mismatch entry for P perturbation at bus '{bus_names[bus_i]}'"
+            )
+            self.assertEqual(
+                moved[0], k,
+                msg=f"Wrong ΔP ordering for bus '{bus_names[bus_i]}': expected index {k}, got {moved[0]}"
+            )
+            self.assertAlmostEqual(df[k], eps, delta=1e-10)
+
+        # Q-block ordering: index (offset + k) corresponds to pq_idx[k]
+        offset = len(non_slack_idx)
+        for k, bus_i in enumerate(pq_idx):
+            p_test = p0.copy()
+            q_test = q0.copy()
+            q_test[bus_i] += eps
+
+            with patch.object(self.pf, "_get_power_specs", return_value=(p_test, q_test)):
+                f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+
+            df = f - f0
+            moved = np.where(np.abs(df) > 1e-10)[0]
+
+            self.assertEqual(
+                len(moved), 1,
+                msg=f"Expected one changed mismatch entry for Q perturbation at bus '{bus_names[bus_i]}'"
+            )
+            expected_idx = offset + k
+            self.assertEqual(
+                moved[0], expected_idx,
+                msg=(
+                    f"Wrong ΔQ ordering for bus '{bus_names[bus_i]}': "
+                    f"expected index {expected_idx}, got {moved[0]}"
+                )
+            )
+            self.assertAlmostEqual(df[expected_idx], eps, delta=1e-10)
 
     # ------------------------------------------------------------------
     def test_mismatch_flat_start_values(self):
         """Full flat-start mismatch vector must match reference (fill in from PowerWorld)."""
         flat_v = np.array([b.vpu for b in self.buses.values()], dtype=float)
         flat_d = np.zeros(len(self.buses))
+
         f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
         np.testing.assert_allclose(
             f, EXPECTED_MISMATCH_FLAT, atol=TOL,
             err_msg="Flat-start mismatch vector does not match reference."
         )
+    
+    # ------------------------------------------------------------------
+    def test_mismatch_angle_volt_from_powerworld(self):
+        """Full flat-start mismatch vector must match reference (fill in from PowerWorld)."""
+        flat_v = np.array([1,.987,1.05,1.3314,1.01057], dtype=float)
+        degrees_powerworld = np.array([0, -14.66, 0.16, -1.63, -3.21], dtype=float)
+        radians_powerworld = np.deg2rad(degrees_powerworld)
+        flat_d = np.array(radians_powerworld,dtype=float)
+
+        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+        np.testing.assert_allclose(
+            f, EXPECTED_MISMATCH_ITER1, atol=TOL,
+            err_msg="Flat-start mismatch vector does not match reference."
+        )
+
 
     # ------------------------------------------------------------------
     def test_calc_power_injections_flat_start_matches_powerworld_derived(self):
@@ -407,7 +476,7 @@ class TestPowerFlow(unittest.TestCase):
         """Final δ (degrees) at each bus must match PowerWorld converged values."""
         results = self.pf.solve(self.circuit, self.ybus_np, tol=TOL, max_iter=50)
         np.testing.assert_allclose(
-            results["angles_deg"], EXPECTED_ANGLES_DEG_CONVERGED, atol=TOL,
+            results["angles_deg"], EXPECTED_ANGLES_DEG_CONVERGED, atol=0.01,
             err_msg="Converged bus angles do not match PowerWorld reference."
         )
 

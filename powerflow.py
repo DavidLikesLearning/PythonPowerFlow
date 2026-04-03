@@ -233,6 +233,7 @@ class PowerFlow:
         angles = np.zeros(N)
 
         # PV and slack buses hold their specified voltage magnitude
+        # check this and debug 
         hold_voltage_mask = (bus_types == BusType.PV) | (bus_types == BusType.Slack)
         voltages[hold_voltage_mask] = voltage_setpoints[hold_voltage_mask]
 
