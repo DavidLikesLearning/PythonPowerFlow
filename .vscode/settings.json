@@ -1,6 +1,25 @@
 {
+    "python.defaultInterpreterPath": "/home/bakry/classes/PythonPowerFlow/.venv/bin/python",
+    "terminal.integrated.profiles.windows": {
+        "WSL": {
+            "path": "C:\\Windows\\System32\\wsl.exe",
+            "icon": "terminal-bash"
+        },
+        "Cmder": {
+            "path": "${env:windir}\\System32\\cmd.exe",
+            "args": [
+                "/k",
+                "C:\\Users\\bakry\\AppData\\Local\\Programs\\Cmder\\vendor\\bin\\vscode_init.cmd"
+            ],
+            "icon": "terminal-cmd"
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "WSL",
+    "terminal.integrated.automationProfile.windows": {
+        "path": "${env:windir}\\System32\\cmd.exe"
+    },
     "python.testing.pytestArgs": [
-        "."
+        "test"
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true

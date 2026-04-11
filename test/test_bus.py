@@ -60,14 +60,16 @@ def test_bus():
     
     # Test error handling for negative vpu
     try:
-        Bus(name="Bus5", nominal_kv=110.0, bus_type=BusType.PQ)
+        bus5=Bus(name="Bus5", nominal_kv=110.0, bus_type=BusType.PQ)
+        bus5.vpu = -1.0
         assert False, "Should raise ValueError for negative vpu"
     except ValueError:
         pass
     
     # Test error handling for negative delta
     try:
-        Bus(name="Bus6", nominal_kv=110.0, bus_type=BusType.PQ, delta=-5.0)
+        bus6=Bus(name="Bus6", nominal_kv=110.0, bus_type=BusType.PQ)
+        bus6.delta = -5.0
         assert False, "Should raise ValueError for negative delta"
     except ValueError:
         pass

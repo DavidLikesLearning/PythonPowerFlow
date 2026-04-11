@@ -19,7 +19,6 @@ classDiagram
         + bus_type: BusType
         + vpu: float
         + delta: float
-        + _set_voltage(value: float)
         + reset_index_counter()
     }
 
@@ -83,21 +82,39 @@ classDiagram
         + loads: dict
         + y_bus: pd.DataFrame
         + calc_ybus(): pd.DataFrame
-        + add_bus()
+        + add_bus(name: str, nominal_kv: float, bus_type: BusType)
         + add_transformer()
         + add_transmission_line()
         + add_generator()
-        + add_load() 
+        + add_load()
     }
+
     class Settings {
-            - _freq: float
-            - _sbase: float
-            + freq: float
-            + sbase: float
-            + __init__(freq: float = 60.0, sbase: float = 100.0)
-            + _validate_params(freq: float, sbase: float)
-        }
-    
+        - _freq: float
+        - _sbase: float
+        + freq: float
+        + sbase: float
+        + __init__()
+    }
+
+    class PowerFlow {
+        - converged: bool
+        - iterations: int
+        - mismatch_history: list[float]
+        - J1
+        - J2
+        - J3
+        - J4
+        - J
+        + __init__()
+        + calc_jacobian(buses, ybus_np, angles, voltages)
+        + solve(buses_or_circuit, ybus=None, tol=1e-3, max_iter=50)
+        + _get_voltage_setpoints(buses)
+        + _extract_buses(circuit_or_buses)
+        + _get_power_specs(circuit_or_buses)
+        + _calc_power_injections(ybus_np, angles, voltages)
+        + _compute_mismatch(circuit_or_buses, ybus_np, angles, voltages)
+    }
 
     Circuit "1" o-- "*" Bus : contains
     Bus "1" o-- "1" BusType : uses
@@ -112,3 +129,8 @@ classDiagram
     TransmissionLine "1" --> "1" Bus : bus2_name
     Load "1" --> "1" Bus : bus1_name
     Generator "1" --> "1" Bus : bus_name
+
+    PowerFlow ..> Circuit : solves
+    PowerFlow ..> BusType : filters bus sets
+    Generator ..> Settings : uses sbase
+    Load ..> Settings : uses sbase

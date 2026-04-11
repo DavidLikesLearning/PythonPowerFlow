@@ -6,5 +6,7 @@ build/
 __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
-.vscode/
 .venv/
+.vscode/
+.vscode/settings.json
+git-cheatsheet.md

@@ -433,6 +433,140 @@ print(circuit._bus_index)
 print(circuit)
 ```
 
+### PowerFlow
+
+Newton-Raphson power flow solver for steady-state AC analysis.
+
+**Purpose:**
+
+- Solve for unknown bus voltage magnitudes and phase angles that satisfy scheduled generation/load injections and network constraints.
+
+**High-Level Theory of Operation:**
+
+1. Build/receive the network admittance matrix `Ybus`.
+2. Initialize a flat start:
+   - All bus angles `δ = 0`.
+   - All magnitudes `|V| = 1.0`, except fixed setpoints at Slack/PV buses.
+3. Compute calculated injections at each bus from `Ybus`, voltages, and angles:
+   - `P_calc`, `Q_calc`.
+4. Build mismatch vector with solver ordering:
+   - `f = [ΔP(non-slack), ΔQ(PQ)]`
+   - `ΔP = P_spec - P_calc`
+   - `ΔQ = Q_spec - Q_calc`
+5. Build Jacobian blocks (`J1..J4`) and assemble full Jacobian `J`.
+6. Solve linear correction system:
+   - `J * Δx = f`
+   - `Δx = [Δδ(non-slack), Δ|V|(PQ)]`
+7. Update state:
+   - Apply angle corrections to non-slack buses.
+   - Apply magnitude corrections to PQ buses.
+8. Repeat until convergence (`max(abs(f)) < tol`) or max iterations reached.
+
+**Bus Type Roles in the Solver:**
+
+- Slack bus:
+  - `|V|` and `δ` fixed.
+  - Absorbs system balancing error.
+- PV bus:
+  - `P` and `|V|` controlled.
+  - `Q` is solved implicitly.
+- PQ bus:
+  - `P` and `Q` specified.
+  - `|V|` and `δ` are solved.
+
+**Method Structure (API vs internals):**
+
+- Public API:
+  - `solve(...)`
+  - `calc_jacobian(...)` (kept public for diagnostics/testing)
+- Internal helpers:
+  - `_get_power_specs(...)`
+  - `_calc_power_injections(...)`
+  - `_compute_mismatch(...)`
+  - `_get_voltage_setpoints(...)`
+  - `_extract_buses(...)`
+
+**Example Usage:**
+
+```python
+import numpy as np
+from bus import BusType
+from circuit import Circuit
+from powerflow import PowerFlow
+
+# 1) Build circuit
+c = Circuit("Example 3-Bus")
+c.add_bus("Bus1", 230.0, bus_type=BusType.Slack)
+c.add_bus("Bus2", 230.0, bus_type=BusType.PQ)
+c.add_bus("Bus3", 230.0, bus_type=BusType.PV)
+
+c.add_transmission_line("L12", "Bus1", "Bus2", r=0.01, x=0.10, b=0.02)
+c.add_transmission_line("L23", "Bus2", "Bus3", r=0.01, x=0.10, b=0.02)
+c.add_generator("G1", "Bus1", voltage_setpoint=1.00, mw_setpoint=0.0)
+c.add_generator("G3", "Bus3", voltage_setpoint=1.02, mw_setpoint=150.0)
+c.add_load("LD2", "Bus2", mw=120.0, mvar=40.0)
+
+# 2) Build Y-bus
+ybus = c.calc_ybus()
+
+# 3) Solve power flow
+pf = PowerFlow()
+results = pf.solve(c, ybus, tol=1e-4, max_iter=50)
+
+# 4) Inspect solution
+print("Converged:", results["converged"])
+print("Iterations:", results["iterations"])
+print("Bus order:", results["bus_names"])
+print("Voltages (pu):", np.round(results["voltages"], 4))
+print("Angles (deg):", np.round(results["angles_deg"], 4))
+```
+
+## Recent Modifications (April 2026)
+
+The following updates were made to the Newton-Raphson workflow, reference-data tests, and PowerWorld validation process.
+
+### PowerFlow Solver and Method Structure
+
+- `PowerFlow.solve(...)` remains the public solver entry point.
+- Internal helper methods are used for staged computation:
+  - `_get_power_specs(...)`
+  - `_calc_power_injections(...)`
+  - `_compute_mismatch(...)`
+- `calc_jacobian(...)` is kept as a callable method for standalone Jacobian validation and debugging.
+
+### Mismatch and Jacobian Validation Improvements
+
+- Added explicit flat-start mismatch validation against PowerWorld reference values.
+- Added derived-injection checks to validate that:
+  - `mismatch = spec - calc`
+  - `calc = spec - mismatch`
+- Added finite-difference Jacobian validation at flat start.
+  - Important sign convention documented in tests:
+    - Jacobian implementation is based on derivatives of calculated injections.
+    - Mismatch is assembled as `f = spec - calc`.
+    - Therefore finite-difference mismatch sensitivity compares as `J ~= -(df/dx)`.
+
+### Mismatch Vector Ordering Test (Stronger Formulation)
+
+- Replaced weak ordering checks with perturbation-based ordering validation.
+- New ordering test perturbs one scheduled `P` or `Q` entry at a time and confirms exactly one mismatch index changes at the expected position.
+- This avoids self-referential label checks and validates ordering behavior directly.
+
+### PowerWorld Cross-Checks (Current Status)
+
+- Flat-start mismatch comparison with PowerWorld matches.
+- Solver convergence tests pass and converge to expected final voltage/angle solution.
+- Intermediate (single-iteration) mismatch snapshots can still differ from PowerWorld due to iteration-path/settings differences (for example, controls, limits, damping, or reporting snapshot conventions), even when final converged states agree.
+
+### Current Test Data Notes
+
+- Added/updated reference arrays for:
+  - Flat-start mismatch
+  - Post-iteration mismatch target
+  - Converged voltages and angles
+- Converged angle test tolerance was relaxed for reference matching (`atol=0.01` in that specific comparison).
+- Keep generator setpoints and expected scheduled injections consistent when updating case data to avoid false mismatches.
+
 ## Y-Bus Matrix Calculation
 
 ### Overview

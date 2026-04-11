@@ -176,10 +176,17 @@ class Circuit:
         Raises:
             ValueError: If a bus with the same name already exists.
         """
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Bus name must be a non-empty string")
         if name in self._buses:
             raise ValueError(f"Bus '{name}' already exists in circuit")
+        if not isinstance(nominal_kv, (int, float)) or nominal_kv <= 0:
+            raise ValueError("nominal_kv must be a positive number")
+        if not isinstance(bus_type, BusType):
+            raise ValueError("bus_type must be a BusType value")
 
-        self._buses[name] = Bus("Bus1",120.0, bus_type=BusType.PQ)
+        self._buses[name] = Bus(name.strip(), float(nominal_kv), bus_type=bus_type)
+        self._y_bus = None  # invalidate Y-bus if bus list changes
 
     def add_transformer(self, name: str, bus1_name: str, bus2_name: str,
                         r: float, x: float, g:float=0, b:float=0) -> None:
@@ -246,8 +253,14 @@ class Circuit:
         """
         if name in self._generators:
             raise ValueError(f"Generator '{name}' already exists in circuit")
+        if bus_name not in self._buses:
+            raise ValueError(f"Bus '{bus_name}' is not in circuit")
 
         self._generators[name] = Generator(name, bus_name, mw_setpoint, voltage_setpoint)
+
+        # Keep bus voltage initialization in sync with generator setpoint.
+        if voltage_setpoint is not None:
+            self._buses[bus_name].vpu = float(voltage_setpoint)
 
     def add_load(self, name: str, bus1_name: str, mw: float, mvar: float) -> None:
         """
@@ -264,6 +277,8 @@ class Circuit:
         """
         if name in self._loads:
             raise ValueError(f"Load '{name}' already exists in circuit")
+        if bus1_name not in self._buses:
+            raise ValueError(f"Bus '{bus1_name}' is not in circuit")
         self._loads[name] = Load(name, bus1_name, mw, mvar)
 
 
