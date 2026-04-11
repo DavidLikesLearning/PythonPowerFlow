@@ -21,7 +21,11 @@ class PowerFlow:
         self.converged = False
         self.iterations = 0
         self.mismatch_history = []
-        self.J1 = self.J2 = self.J3 = self.J4 = self.J = None
+        self.J1: np.ndarray | None = None
+        self.J2: np.ndarray | None = None
+        self.J3: np.ndarray | None = None
+        self.J4: np.ndarray | None = None
+        self.J: np.ndarray | None = None
 
     # ------------------------------------------------------------------
     # Milestone 6 helpers: power injections and mismatch vector
@@ -109,7 +113,7 @@ class PowerFlow:
         Q = np.sum(VV * (G * sin_d - B * cos_d), axis=1)
         return P, Q
 
-    def _compute_mismatch(self, circuit_or_buses, ybus_np, angles, voltages):
+    def _compute_mismatch(self, circuit_or_buses, ybus_np, angles, voltages, p_spec, q_spec):
         """
         Build the mismatch vector f = [ΔP (non-slack), ΔQ (PQ only)].
 
@@ -121,24 +125,21 @@ class PowerFlow:
             ybus_np  : np.ndarray (N x N, complex)
             angles   : np.ndarray (N,) in radians
             voltages : np.ndarray (N,) in per unit
+            p_spec   : np.ndarray (N,) — scheduled real power injections (computed once)
+            q_spec   : np.ndarray (N,) — scheduled reactive power injections (computed once)
 
         Returns:
             f : np.ndarray of shape (2N - 2 - NPV,)
-
-        Note:
-            Scheduled injections are sourced from circuit.generators/loads
-            whenever a Circuit object is provided.
         """
         buses = self._extract_buses(circuit_or_buses)
         bus_types = np.array([bus.bus_type for bus in buses.values()], dtype=object)
         ns = np.flatnonzero(bus_types != BusType.Slack)
         pq = np.flatnonzero(bus_types == BusType.PQ)
-        p_spec, q_spec = self._get_power_specs(circuit_or_buses)
         P, Q = self._calc_power_injections(ybus_np, angles, voltages)
 
         return np.concatenate([p_spec[ns] - P[ns], q_spec[pq] - Q[pq]])
 
-    def calc_jacobian(self, buses, ybus_np, angles, voltages):
+    def calc_jacobian(self, buses, ybus_np, angles, voltages) -> np.ndarray:
         """Build the full Jacobian matrix for a Newton-Raphson iteration."""
         # ybus_np = ybus.values #if hasattr(ybus, "values") else np.asarray(ybus)
         bus_types = np.array([bus.bus_type for bus in buses.values()], dtype=object)
@@ -168,25 +169,30 @@ class PowerFlow:
 
         H = VV * (G * sin_d - B * cos_d)
         np.fill_diagonal(H, -Q - np.diagonal(B) * voltage_sq)
-        self.J1 = H[np.ix_(ns, ns)]
+        J1 = H[np.ix_(ns, ns)]
 
         N = voltages[:, None] * (G * cos_d + B * sin_d)
         np.fill_diagonal(N, p_over_v + np.diagonal(G) * voltages)
-        self.J2 = N[np.ix_(ns, pq)]
+        J2 = N[np.ix_(ns, pq)]
 
         Jm = -VV * (G * cos_d + B * sin_d)
         np.fill_diagonal(Jm, P - np.diagonal(G) * voltage_sq)
-        self.J3 = Jm[np.ix_(pq, ns)]
+        J3 = Jm[np.ix_(pq, ns)]
 
         L = voltages[:, None] * (G * sin_d - B * cos_d)
         np.fill_diagonal(L, q_over_v - np.diagonal(B) * voltages)
-        self.J4 = L[np.ix_(pq, pq)]
+        J4 = L[np.ix_(pq, pq)]
 
-        self.J = np.block([
-            [self.J1, self.J2],
-            [self.J3, self.J4],
+        J = np.block([
+            [J1, J2],
+            [J3, J4],
         ])
-        return self.J
+        self.J1 = J1
+        self.J2 = J2
+        self.J3 = J3
+        self.J4 = J4
+        self.J = J
+        return J
 
     # ------------------------------------------------------------------
     # Main solver
@@ -243,6 +249,10 @@ class PowerFlow:
 
         n_non_slack = len(non_slack_idx)
 
+        # Compute scheduled power specs once (iteration-invariant)
+        spec_source = circuit_ref if circuit_ref is not None else buses
+        p_spec, q_spec = self._get_power_specs(spec_source)
+
         self.mismatch_history = []
         self.converged = False
         self.iterations = 0
@@ -250,8 +260,7 @@ class PowerFlow:
         for iteration in range(max_iter):
 
             # Step 1 — Power mismatch vector (Milestone 6)
-            spec_source = circuit_ref if circuit_ref is not None else buses
-            f = self._compute_mismatch(spec_source, ybus_np, angles, voltages)
+            f = self._compute_mismatch(spec_source, ybus_np, angles, voltages, p_spec, q_spec)
 
             max_mismatch = np.max(np.abs(f))
             self.mismatch_history.append(max_mismatch)

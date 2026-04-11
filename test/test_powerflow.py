@@ -51,7 +51,7 @@ def build_circuit():
     # Bus Two load: 800 MW / 280 MVAr -> -8.0 pu / -2.8 pu
     # Bus Three load: 80 MW / 40 MVAr -> -0.8 pu / -0.4 pu
     # Bus Three generator: 520 MW -> +5.2 pu
-    circuit.add_generator("G1", "One", voltage_setpoint=1.0, mw_setpoint=0)
+    circuit.add_generator("G1", "One", voltage_setpoint=1.0, mw_setpoint=278.3)
     circuit.add_load("LD2", "Two", mw=800.0, mvar=280.0)
     circuit.add_load("LD3", "Three", mw=80.0, mvar=40.0)
     circuit.add_generator("G3", "Three", voltage_setpoint=1.05, mw_setpoint=520.0)
@@ -144,13 +144,14 @@ EXPECTED_ANGLES_DEG_CONVERGED = np.array([
     -4.55,   # Five  <-- FILL IN (degrees)
 ])
 
-# Final P and Q injections at converged solution (per unit, 100 MVA base).
+# Final net bus injections at converged solution (per unit, 100 MVA base).
 # Format: {bus_name: (P_calc, Q_calc)}
-# Buses Two, Three, Four, Five are fully constrained by spec; One (slack) absorbs mismatch.
+# These are network injections at the bus, so Bus Three includes both its
+# generator and local load (5.2 - 0.8 = 4.4 pu net real injection).
 EXPECTED_INJECTIONS = {
-    "One":   (0.0,   0.0),   # <-- FILL IN (slack bus absorbs everything)
+    "One":   (3.948382, 1.142800),
     "Two":   (-8.0, -2.8),   # PQ: should match spec exactly at convergence
-    "Three": ( 5.2,  0.0),   # PV: P matches spec; Q is free <-- FILL IN Q
+    "Three": ( 4.4,  2.974762),
     "Four":  ( 0.0,  0.0),   # PQ: should match spec
     "Five":  ( 0.0,  0.0),   # PQ: should match spec
 }
@@ -168,6 +169,8 @@ class TestJacobian(unittest.TestCase):
     def setUp(self):
         self.circuit, self.buses, self.ybus_np = setup_system()
         self.jac = PowerFlow()
+        # Compute power specs once (iteration-invariant)
+        self.p_spec, self.q_spec = self.jac._get_power_specs(self.circuit)
 
     # ------------------------------------------------------------------
     def test_jacobian_dimension(self):
@@ -190,10 +193,18 @@ class TestJacobian(unittest.TestCase):
             self.buses, self.ybus_np,
             CONVERGED_ANGLES_RAD, CONVERGED_VOLTAGES
         )
-        self.assertEqual(self.jac.J1.shape, (4, 4), "J1 should be 4×4")
-        self.assertEqual(self.jac.J2.shape, (4, 3), "J2 should be 4×3")
-        self.assertEqual(self.jac.J3.shape, (3, 4), "J3 should be 3×4")
-        self.assertEqual(self.jac.J4.shape, (3, 3), "J4 should be 3×3")
+        J1 = self.jac.J1
+        J2 = self.jac.J2
+        J3 = self.jac.J3
+        J4 = self.jac.J4
+        assert J1 is not None
+        assert J2 is not None
+        assert J3 is not None
+        assert J4 is not None
+        self.assertEqual(J1.shape, (4, 4), "J1 should be 4×4")
+        self.assertEqual(J2.shape, (4, 3), "J2 should be 4×3")
+        self.assertEqual(J3.shape, (3, 4), "J3 should be 3×4")
+        self.assertEqual(J4.shape, (3, 3), "J4 should be 3×3")
 
     # ------------------------------------------------------------------
     def test_jacobian_values(self):
@@ -220,7 +231,7 @@ class TestJacobian(unittest.TestCase):
         pf   = PowerFlow()
         flat_v = np.array([b.vpu for b in self.buses.values()], dtype=float)
         flat_d = np.zeros(len(self.buses))
-        f = pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+        f = pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v, self.p_spec, self.q_spec)
 
         self.assertEqual(J.shape[0], len(f),
                          f"Jacobian rows ({J.shape[0]}) must equal mismatch length ({len(f)})")
@@ -236,6 +247,8 @@ class TestPowerFlow(unittest.TestCase):
     def setUp(self):
         self.circuit, self.buses, self.ybus_np = setup_system()
         self.pf = PowerFlow()
+        # Compute power specs once (iteration-invariant)
+        self.p_spec, self.q_spec = self.pf._get_power_specs(self.circuit)
 
     # ------------------------------------------------------------------
     def test_get_power_specs_values(self):
@@ -257,7 +270,7 @@ class TestPowerFlow(unittest.TestCase):
         """Mismatch vector must have length 7 (4 ΔP entries + 3 ΔQ entries)."""
         flat_v = np.array([b.vpu for b in self.buses.values()], dtype=float)
         flat_d = np.zeros(len(self.buses))
-        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v, self.p_spec, self.q_spec)
         self.assertEqual(len(f), 7,
                          f"Expected mismatch vector of length 7, got {len(f)}")
 
@@ -274,7 +287,7 @@ class TestPowerFlow(unittest.TestCase):
         flat_d = np.zeros(len(self.buses), dtype=float)
 
         p0, q0 = self.pf._get_power_specs(self.circuit)
-        f0 = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+        f0 = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v, self.p_spec, self.q_spec)
 
         bus_names = list(self.buses.keys())
         bus_types = np.array([b.bus_type for b in self.buses.values()], dtype=object)
@@ -289,8 +302,7 @@ class TestPowerFlow(unittest.TestCase):
             q_test = q0.copy()
             p_test[bus_i] += eps
 
-            with patch.object(self.pf, "_get_power_specs", return_value=(p_test, q_test)):
-                f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+            f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v, p_test, q_test)
 
             df = f - f0
             moved = np.where(np.abs(df) > 1e-10)[0]
@@ -312,8 +324,7 @@ class TestPowerFlow(unittest.TestCase):
             q_test = q0.copy()
             q_test[bus_i] += eps
 
-            with patch.object(self.pf, "_get_power_specs", return_value=(p_test, q_test)):
-                f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+            f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v, p_test, q_test)
 
             df = f - f0
             moved = np.where(np.abs(df) > 1e-10)[0]
@@ -338,7 +349,7 @@ class TestPowerFlow(unittest.TestCase):
         flat_v = np.array([b.vpu for b in self.buses.values()], dtype=float)
         flat_d = np.zeros(len(self.buses))
 
-        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v, self.p_spec, self.q_spec)
         np.testing.assert_allclose(
             f, EXPECTED_MISMATCH_FLAT, atol=TOL,
             err_msg="Flat-start mismatch vector does not match reference."
@@ -352,7 +363,7 @@ class TestPowerFlow(unittest.TestCase):
         radians_powerworld = np.deg2rad(degrees_powerworld)
         flat_d = np.array(radians_powerworld,dtype=float)
 
-        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v, self.p_spec, self.q_spec)
         np.testing.assert_allclose(
             f, EXPECTED_MISMATCH_ITER1, atol=TOL,
             err_msg="Flat-start mismatch vector does not match reference."
@@ -395,7 +406,7 @@ class TestPowerFlow(unittest.TestCase):
 
         p_spec, q_spec = self.pf._get_power_specs(self.circuit)
         p_calc, q_calc = self.pf._calc_power_injections(self.ybus_np, flat_d, flat_v)
-        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v, self.p_spec, self.q_spec)
 
         bus_types = np.array([b.bus_type for b in self.buses.values()], dtype=object)
         non_slack_idx = np.flatnonzero(bus_types != BusType.Slack)
@@ -431,8 +442,8 @@ class TestPowerFlow(unittest.TestCase):
             a_minus = angles.copy()
             a_plus[i] += eps
             a_minus[i] -= eps
-            f_plus = self.pf._compute_mismatch(self.circuit, self.ybus_np, a_plus, voltages)
-            f_minus = self.pf._compute_mismatch(self.circuit, self.ybus_np, a_minus, voltages)
+            f_plus = self.pf._compute_mismatch(self.circuit, self.ybus_np, a_plus, voltages, self.p_spec, self.q_spec)
+            f_minus = self.pf._compute_mismatch(self.circuit, self.ybus_np, a_minus, voltages, self.p_spec, self.q_spec)
             J_fd[:, col] = (f_plus - f_minus) / (2.0 * eps)
 
         # Columns for |V|(PQ)
@@ -442,8 +453,8 @@ class TestPowerFlow(unittest.TestCase):
             v_minus = voltages.copy()
             v_plus[i] += eps
             v_minus[i] -= eps
-            f_plus = self.pf._compute_mismatch(self.circuit, self.ybus_np, angles, v_plus)
-            f_minus = self.pf._compute_mismatch(self.circuit, self.ybus_np, angles, v_minus)
+            f_plus = self.pf._compute_mismatch(self.circuit, self.ybus_np, angles, v_plus, self.p_spec, self.q_spec)
+            f_minus = self.pf._compute_mismatch(self.circuit, self.ybus_np, angles, v_minus, self.p_spec, self.q_spec)
             J_fd[:, offset + local_col] = (f_plus - f_minus) / (2.0 * eps)
 
         # Code Jacobian is built from derivatives of calculated injections,
@@ -482,15 +493,17 @@ class TestPowerFlow(unittest.TestCase):
 
     # ------------------------------------------------------------------
     def test_power_injections_at_convergence(self):
-        """Calculated P and Q at each bus after convergence must match expected injections."""
+        """Calculated net P and Q at each bus after convergence must match expected injections."""
         results  = self.pf.solve(self.circuit, self.ybus_np, tol=TOL, max_iter=50)
         voltages = results["voltages"]
         angles   = results["angles_rad"]
         bus_names = list(self.buses.keys())
 
+        P_calc, Q_calc = self.pf._calc_power_injections(self.ybus_np, angles, voltages)
+
         for i, name in enumerate(bus_names):
-            Pi_calc = self.pf._calc_Pi(i, self.ybus_np, angles, voltages)
-            Qi_calc = self.pf._calc_Qi(i, self.ybus_np, angles, voltages)
+            Pi_calc = P_calc[i]
+            Qi_calc = Q_calc[i]
             P_ref, Q_ref = EXPECTED_INJECTIONS[name]
 
             self.assertAlmostEqual(Pi_calc, P_ref, delta=TOL,
@@ -531,6 +544,8 @@ class TestPowerFlow(unittest.TestCase):
         angles    = results["angles_rad"]
         bus_names = list(self.buses.keys())
 
+        P_calc, Q_calc = self.pf._calc_power_injections(self.ybus_np, angles, voltages)
+
         pq_specs = {
             "Two":  (-8.0, -2.8),
             "Four": ( 0.0,  0.0),
@@ -538,8 +553,8 @@ class TestPowerFlow(unittest.TestCase):
         }
         for name, (P_ref, Q_ref) in pq_specs.items():
             i       = bus_names.index(name)
-            Pi_calc = self.pf._calc_Pi(i, self.ybus_np, angles, voltages)
-            Qi_calc = self.pf._calc_Qi(i, self.ybus_np, angles, voltages)
+            Pi_calc = P_calc[i]
+            Qi_calc = Q_calc[i]
             self.assertAlmostEqual(Pi_calc, P_ref, delta=TOL,
                 msg=f"PQ bus '{name}' P not at spec: got {Pi_calc:.4f}, expected {P_ref}")
             self.assertAlmostEqual(Qi_calc, Q_ref, delta=TOL,
@@ -550,7 +565,7 @@ class TestPowerFlow(unittest.TestCase):
         """Validate flat-start mismatch vector matches PowerWorld reference."""
         flat_v = np.array([b.vpu for b in self.buses.values()], dtype=float)
         flat_d = np.zeros(len(self.buses))
-        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v)
+        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v, self.p_spec, self.q_spec)
         np.testing.assert_allclose(
             f, EXPECTED_MISMATCH_FLAT, atol=1e-2,
             err_msg="Flat-start mismatch does not match PowerWorld reference."
@@ -567,7 +582,7 @@ class TestPowerFlow(unittest.TestCase):
         voltages = np.array([b.vpu for b in self.buses.values()], dtype=float)
 
         # 1) Compute mismatch at current state
-        f0 = self.pf._compute_mismatch(self.circuit, self.ybus_np, angles, voltages)
+        f0 = self.pf._compute_mismatch(self.circuit, self.ybus_np, angles, voltages, self.p_spec, self.q_spec)
 
         # 2) Build Jacobian at current state
         J0 = self.pf.calc_jacobian(self.buses, self.ybus_np, angles, voltages)
@@ -591,7 +606,7 @@ class TestPowerFlow(unittest.TestCase):
             voltages[bus_idx] += d_volt[local_i]
 
         # 5) Compute mismatch at post-iteration-1 state
-        f_iter1 = self.pf._compute_mismatch(self.circuit, self.ybus_np, angles, voltages)
+        f_iter1 = self.pf._compute_mismatch(self.circuit, self.ybus_np, angles, voltages, self.p_spec, self.q_spec)
 
         np.testing.assert_allclose(
             f_iter1, EXPECTED_MISMATCH_ITER1, atol=1e-2,
@@ -600,15 +615,16 @@ class TestPowerFlow(unittest.TestCase):
 
     # ------------------------------------------------------------------
     def test_pv_bus_p_spec_satisfied(self):
-        """At convergence, real power injection at PV bus 'Three' must equal 5.2 pu."""
+        """At convergence, net real power injection at PV bus 'Three' must equal 4.4 pu."""
         results   = self.pf.solve(self.circuit, self.ybus_np, tol=TOL, max_iter=50)
         bus_names = list(self.buses.keys())
         idx       = bus_names.index("Three")
-        Pi_calc   = self.pf._calc_Pi(
-            idx, self.ybus_np, results["angles_rad"], results["voltages"]
+        P_calc, _ = self.pf._calc_power_injections(
+            self.ybus_np, results["angles_rad"], results["voltages"]
         )
-        self.assertAlmostEqual(Pi_calc, 5.2, delta=TOL,
-                               msg=f"Bus 'Three' P injection {Pi_calc:.4f} != 5.2 pu")
+        Pi_calc = P_calc[idx]
+        self.assertAlmostEqual(Pi_calc, EXPECTED_P_SPEC[idx], delta=TOL,
+                               msg=f"Bus 'Three' net P injection {Pi_calc:.4f} != {EXPECTED_P_SPEC[idx]:.4f} pu")
 
 
 # =============================================================================
