@@ -565,7 +565,7 @@ class TestPowerFlow(unittest.TestCase):
         """Validate flat-start mismatch vector matches PowerWorld reference."""
         flat_v = np.array([b.vpu for b in self.buses.values()], dtype=float)
         flat_d = np.zeros(len(self.buses))
-        f = self.pf._compute_mismatch(self.circuit, self.ybus_np, flat_d, flat_v, self.p_spec, self.q_spec)
+        f = self.pf._compute_mismatch(self.buses, self.ybus_np, flat_d, flat_v, self.p_spec, self.q_spec)
         np.testing.assert_allclose(
             f, EXPECTED_MISMATCH_FLAT, atol=1e-2,
             err_msg="Flat-start mismatch does not match PowerWorld reference."
@@ -582,7 +582,7 @@ class TestPowerFlow(unittest.TestCase):
         voltages = np.array([b.vpu for b in self.buses.values()], dtype=float)
 
         # 1) Compute mismatch at current state
-        f0 = self.pf._compute_mismatch(self.circuit, self.ybus_np, angles, voltages, self.p_spec, self.q_spec)
+        f0 = self.pf._compute_mismatch(self.buses, self.ybus_np, angles, voltages, self.p_spec, self.q_spec)
 
         # 2) Build Jacobian at current state
         J0 = self.pf.calc_jacobian(self.buses, self.ybus_np, angles, voltages)
@@ -606,7 +606,7 @@ class TestPowerFlow(unittest.TestCase):
             voltages[bus_idx] += d_volt[local_i]
 
         # 5) Compute mismatch at post-iteration-1 state
-        f_iter1 = self.pf._compute_mismatch(self.circuit, self.ybus_np, angles, voltages, self.p_spec, self.q_spec)
+        f_iter1 = self.pf._compute_mismatch(self.buses, self.ybus_np, angles, voltages, self.p_spec, self.q_spec)
 
         np.testing.assert_allclose(
             f_iter1, EXPECTED_MISMATCH_ITER1, atol=1e-2,
