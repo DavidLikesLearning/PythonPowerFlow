@@ -238,7 +238,8 @@ class Circuit:
         self._y_bus = None  # invalidate Y-bus; call build_y_bus() to rebuild
 
     def add_generator(self, name: str, bus_name: str,
-                      voltage_setpoint: float, mw_setpoint: float) -> None:
+                      voltage_setpoint: float, mw_setpoint: float,
+                      x_subtransient: float | None = None) -> None:
         """
         Add a generator to the circuit.
 
@@ -247,6 +248,7 @@ class Circuit:
             bus_name: Bus name where generator is connected.
             voltage_setpoint: Voltage setpoint in per unit.
             mw_setpoint: Active power setpoint in MW.
+            x_subtransient: Generator subtransient reactance in per unit.
 
         Raises:
             ValueError: If a generator with the same name already exists.
@@ -256,7 +258,13 @@ class Circuit:
         if bus_name not in self._buses:
             raise ValueError(f"Bus '{bus_name}' is not in circuit")
 
-        self._generators[name] = Generator(name, bus_name, mw_setpoint, voltage_setpoint)
+        self._generators[name] = Generator(
+            name,
+            bus_name,
+            mw_setpoint,
+            voltage_setpoint,
+            x_subtransient=x_subtransient,
+        )
 
         # Keep bus voltage initialization in sync with generator setpoint.
         if voltage_setpoint is not None:

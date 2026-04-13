@@ -4,11 +4,12 @@ from generator import Generator
 # --- Comprehensive Generator class tests ---
 
 def test_generator_basic_creation():
-    g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.05)
+    g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.05, x_subtransient=0.2)
     assert g.name == "G1"
     assert g.bus_name == "BUS1"
     assert g.mw_setpoint == 100.0
     assert g.v_setpoint == 1.05
+    assert g.x_subtransient == 0.2
     assert g.p is None
 
 def test_generator_v_setpoint_optional():
@@ -18,18 +19,20 @@ def test_generator_v_setpoint_optional():
     assert g.v_setpoint == 1.0
 
 def test_generator_repr_and_str():
-    g = Generator("G3", "BUS3", mw_setpoint=100.0, v_setpoint=1.0)
+    g = Generator("G3", "BUS3", mw_setpoint=100.0, v_setpoint=1.0, x_subtransient=0.25)
     rep = repr(g)
     assert "Generator(" in rep
     assert "name='G3'" in rep or 'name="G3"' in rep
     assert "bus_name='BUS3'" in rep or 'bus_name="BUS3"' in rep
     assert "mw_setpoint=100.0" in rep
     assert "v_setpoint=1.0" in rep
+    assert "x_subtransient=0.25" in rep
     s = str(g)
     assert "Generator G3" in s
     assert "BUS3" in s
     assert "100.0 MW" in s
     assert "1.0 p.u." in s
+    assert "X''=0.25 p.u." in s
 
 def test_generator_setters():
     g = Generator("G4", "BUS4", mw_setpoint=10.0, v_setpoint=1.0)
@@ -41,6 +44,8 @@ def test_generator_setters():
     assert g.mw_setpoint == 20.0
     g.v_setpoint = 1.1
     assert g.v_setpoint == 1.1
+    g.x_subtransient = 0.3
+    assert g.x_subtransient == 0.3
 
 def test_generator_invalid_name():
     with pytest.raises(ValueError):
@@ -79,6 +84,17 @@ def test_generator_invalid_v_setpoint_negative():
     with pytest.raises(ValueError):
         g.v_setpoint = -2.0
 
+def test_generator_invalid_x_subtransient():
+    with pytest.raises(ValueError):
+        Generator("GX", "BUSX", mw_setpoint=10.0, x_subtransient=0.0)
+    with pytest.raises(ValueError):
+        Generator("GX", "BUSX", mw_setpoint=10.0, x_subtransient=-0.1)
+    g = Generator("GX", "BUSX", mw_setpoint=10.0)
+    with pytest.raises(ValueError):
+        g.x_subtransient = 0.0
+    with pytest.raises(TypeError):
+        g.x_subtransient = "bad"  # type: ignore
+
 def test_generator_calc_p():
     import math
     import settings
@@ -102,13 +118,14 @@ def test_generator_as_float_type_check():
         Generator._as_float(True, "field")
 
 def test_generator_repr_contains_fields():
-    g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.0)
+    g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.0, x_subtransient=0.3)
     rep = repr(g)
     assert "Generator(" in rep
     assert "name='G1'" in rep
     assert "bus_name='BUS1'" in rep
     assert "mw_setpoint=100.0" in rep
     assert "v_setpoint=1.0" in rep
+    assert "x_subtransient=0.3" in rep
 
 def test_generator_str_human_readable():
     g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.02)

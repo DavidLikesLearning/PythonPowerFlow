@@ -14,6 +14,7 @@ class Generator:
         bus_name: Name of the connected bus (non-empty string).
         mw_setpoint: Active power setpoint in MW (float).
         v_setpoint: Voltage magnitude setpoint in p.u. (float or None).
+        x_subtransient: Generator subtransient reactance in p.u. (float or None).
         p: per unit real power injection (float).
     """
 
@@ -23,14 +24,16 @@ class Generator:
         bus_name: str,
         mw_setpoint: float,
         v_setpoint: float | None = None,
+        x_subtransient: float | None = None,
     ) -> None:
         # store raw values first so __repr__ is safe even if validation fails
         self._name = name
         self._bus_name = bus_name
         self._mw_setpoint = mw_setpoint
         self._v_setpoint = v_setpoint
+        self._x_subtransient = x_subtransient
         self._p = None  # will be set by calc_p()
-        self._validate_params(name, bus_name, mw_setpoint, v_setpoint)
+        self._validate_params(name, bus_name, mw_setpoint, v_setpoint, x_subtransient)
 
     # ------------------------------------------------------------------
     # Representation
@@ -40,7 +43,8 @@ class Generator:
             f"Generator(name={self._name!r}, "
             f"bus_name={self._bus_name!r}, "
             f"mw_setpoint={self._mw_setpoint!r}, "
-            f"v_setpoint={self._v_setpoint!r})"
+            f"v_setpoint={self._v_setpoint!r}, "
+            f"x_subtransient={self._x_subtransient!r})"
         )
 
     def __str__(self) -> str:
@@ -50,6 +54,8 @@ class Generator:
         )
         if self._v_setpoint is not None:
             base += f", Vset={self._v_setpoint} p.u."
+        if self._x_subtransient is not None:
+            base += f", X''={self._x_subtransient} p.u."
         return base
 
     # ------------------------------------------------------------------
@@ -61,6 +67,7 @@ class Generator:
         bus_name: str,
         mw_setpoint: float,
         v_setpoint: float | None,
+        x_subtransient: float | None,
     ) -> None:
         # basic string checks
         if (
@@ -80,6 +87,11 @@ class Generator:
             v = self._as_float(v_setpoint, "v_setpoint")
             if v <= 0:
                 raise ValueError("v_setpoint must be positive when provided")
+
+        if x_subtransient is not None:
+            xpp = self._as_float(x_subtransient, "x_subtransient")
+            if not math.isfinite(xpp) or xpp <= 0:
+                raise ValueError("x_subtransient must be finite and positive when provided")
 
     @staticmethod
     def _as_float(value: int | float, field: str) -> float:
@@ -144,6 +156,20 @@ class Generator:
     def p(self) -> Optional[float]:
         """Per unit real power injection, updated by calc_p()."""
         return self._p
+
+    @property
+    def x_subtransient(self) -> float | None:
+        return self._x_subtransient
+
+    @x_subtransient.setter
+    def x_subtransient(self, value: float | None) -> None:
+        if value is None:
+            self._x_subtransient = None
+            return
+        v = self._as_float(value, "x_subtransient")
+        if not math.isfinite(v) or v <= 0:
+            raise ValueError("x_subtransient must be finite and positive when provided")
+        self._x_subtransient = v
 
 def main():
     pass
