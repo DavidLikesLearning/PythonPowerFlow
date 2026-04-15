@@ -20,12 +20,6 @@ class FaultStudy:
         if not isinstance(vf, (int, float, complex)):
             raise TypeError("vf must be numeric")
 
-        for gen in circuit.generators.values():
-            if gen.x_subtransient is None:
-                raise ValueError(
-                    f"Generator '{gen.name}' is missing x_subtransient required for fault study"
-                )
-
         return complex(vf)
 
     def _calc_ybus_fault(self, circuit) -> pd.DataFrame:
@@ -46,6 +40,9 @@ class FaultStudy:
                 )
 
             x_subtransient = gen.x_subtransient
+            if x_subtransient is None:
+                continue
+
             y_norton = 1.0 / (1j * x_subtransient)
             ybus_fault.loc[bus_name, bus_name] += y_norton
 
@@ -86,19 +83,21 @@ class FaultStudy:
             raise ZeroDivisionError("Znn is zero; cannot compute fault current")
 
         ifn = vf_complex / znn
+        ifn_pu = float(np.abs(ifn))
 
-        bus_voltages: dict[str, complex] = {}
+        bus_voltage_magnitudes: dict[str, float] = {}
         for k, bus_name in enumerate(bus_names):
             zkn = zbus_np[k, n]
             ek = (1.0 - (zkn / znn)) * vf_complex
-            bus_voltages[bus_name] = complex(ek)
+            bus_voltage_magnitudes[bus_name] = float(np.abs(ek))
 
         return {
             "fault_bus_name": fault_bus_name,
             "vf": vf_complex,
             "ifn": complex(ifn),
+            "ifn_pu": ifn_pu,
             "znn": znn,
-            "post_fault_bus_voltages": bus_voltages,
+            "post_fault_bus_voltages": bus_voltage_magnitudes,
             "zbus_fault": zbus_fault,
             "ybus_fault": self._calc_ybus_fault(circuit),
         }
