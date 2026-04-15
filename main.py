@@ -1,7 +1,9 @@
 import numpy as np
+import pandas as pd
 
 from bus import BusType
 from circuit import Circuit
+from faultstudy import FaultStudy
 from powerflow import PowerFlow
 
 
@@ -36,19 +38,24 @@ def print_heading(title: str) -> None:
     print(f"{'=' * 80}")
 
 
-def print_solve_results(results: dict) -> None:
+def print_solve_results(results: dict, print_decimals: int) -> None:
     """Print every field returned by PowerFlow.solve() in a readable format."""
     print_heading("PowerFlow.solve() Output")
     for key, value in results.items():
         print(f"{key}:")
         if isinstance(value, np.ndarray):
-            print(np.array2string(value, precision=6, suppress_small=False))
+            print(np.array2string(value, precision=print_decimals, suppress_small=False))
         else:
             print(value)
         print()
 
 
-def print_bus_summary(circuit: Circuit, results: dict, ybus_np: np.ndarray) -> None:
+def print_bus_summary(
+    circuit: Circuit,
+    results: dict,
+    ybus_np: np.ndarray,
+    print_decimals: int,
+) -> None:
     """Print solved bus quantities bus-by-bus for quick inspection."""
     pf = PowerFlow()
     p_calc, q_calc = pf._calc_power_injections(
@@ -61,15 +68,32 @@ def print_bus_summary(circuit: Circuit, results: dict, ybus_np: np.ndarray) -> N
     for index, bus_name in enumerate(results["bus_names"]):
         print(
             f"{bus_name:>5} | "
-            f"V={results['voltages'][index]:.5f} pu | "
-            f"angle={results['angles_deg'][index]:.5f} deg | "
-            f"P={p_calc[index]:.5f} pu | "
-            f"Q={q_calc[index]:.5f} pu"
+            f"V={results['voltages'][index]:.{print_decimals}f} pu | "
+            f"angle={results['angles_deg'][index]:.{print_decimals}f} deg | "
+            f"P={p_calc[index]:.{print_decimals}f} pu | "
+            f"Q={q_calc[index]:.{print_decimals}f} pu"
         )
 
 
+def print_fault_results(results: dict, print_decimals: int) -> None:
+    """Print every field returned by FaultStudy.solve() in a readable format."""
+    print_heading("FaultStudy.solve() Output")
+    for key, value in results.items():
+        print(f"{key}:")
+        if isinstance(value, np.ndarray):
+            print(np.array2string(value, precision=print_decimals, suppress_small=False))
+        else:
+            print(value)
+        print()
+
+
 def main() -> None:
-    np.set_printoptions(precision=6, suppress=True)
+    # Change this in one place to control numeric printing in this script.
+    print_decimals = 3
+    np.set_printoptions(precision=print_decimals, suppress=True)
+    pd.set_option("display.precision", print_decimals)
+    pd.set_option("display.max_columns", None)
+    pd.set_option("display.width", None)
 
     print_heading("Building 5-Bus Example 6.9")
     circuit = build_example_5bus()
@@ -86,8 +110,17 @@ def main() -> None:
     pf = PowerFlow()
     results = pf.solve(circuit, ybus_np, tol=1e-3, max_iter=50)
 
-    print_solve_results(results)
-    print_bus_summary(circuit, results, ybus_np)
+    print_solve_results(results, print_decimals)
+    print_bus_summary(circuit, results, ybus_np, print_decimals)
+
+    print_heading("Running 3-Phase Symmetrical Fault Study")
+    fs = FaultStudy()
+    ybus_fault = fs._calc_ybus_fault(circuit)
+    print("Fault-condition Y-bus (ybus_fault):")
+    print(ybus_fault)
+
+    fault_results = fs.solve(circuit, fault_bus_name="One")
+    print_fault_results(fault_results, print_decimals)
 
 
 if __name__ == "__main__":
