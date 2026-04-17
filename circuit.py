@@ -239,7 +239,7 @@ class Circuit:
 
     def add_generator(self, name: str, bus_name: str,
                       voltage_setpoint: float, mw_setpoint: float,
-                      x_subtransient: float | None = None) -> None:
+                      x_subtransient: float | None = 1.0) -> None:
         """
         Add a generator to the circuit.
 

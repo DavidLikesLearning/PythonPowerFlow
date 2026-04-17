@@ -24,8 +24,8 @@ def _build_two_bus_fault_system() -> Circuit:
     return circuit
 
 
-def _build_five_bus_fault_system_no_subtransient() -> Circuit:
-    """Build the same 5-bus network used by power-flow tests with default generator X'' values."""
+def _build_five_bus_fault_system() -> Circuit:
+    """Build the same 5-bus network used by power-flow tests with default x_subtransient=1.0."""
     circuit = Circuit("5-Bus Example 6.9 Fault Study")
 
     circuit.add_bus("One", 15.0, bus_type=BusType.Slack)
@@ -40,7 +40,7 @@ def _build_five_bus_fault_system_no_subtransient() -> Circuit:
     circuit.add_transformer("T15", "One", "Five", r=0.0015, x=0.02)
     circuit.add_transformer("T34", "Three", "Four", r=0.00075, x=0.01)
 
-    # Intentionally omit x_subtransient so generators use default None.
+    # x_subtransient defaults to 1.0 pu for both generators.
     circuit.add_generator("G1", "One", voltage_setpoint=1.0, mw_setpoint=278.3)
     circuit.add_load("LD2", "Two", mw=800.0, mvar=280.0)
     circuit.add_load("LD3", "Three", mw=80.0, mvar=40.0)
@@ -63,6 +63,29 @@ def test_calc_ybus_fault_adds_generator_norton_shunt():
     assert abs(y_fault[0, 1] - y_base[0, 1]) < 1e-12
     assert abs(y_fault[1, 0] - y_base[1, 0]) < 1e-12
     assert abs(y_fault[1, 1] - y_base[1, 1]) < 1e-12
+
+
+def test_calc_ybus_fault_adds_load_admittance():
+    """Load admittance Y = P_pu + jQ_pu must be stamped on the load bus diagonal."""
+    circuit = _build_two_bus_fault_system()
+    circuit.add_load("LD2", "Two", mw=50.0, mvar=25.0)
+    study = FaultStudy()
+
+    y_base = circuit.y_bus.to_numpy(dtype=np.complex128)
+    y_fault = study._calc_ybus_fault(circuit).to_numpy(dtype=np.complex128)
+
+    from settings import grid_settings
+    p_pu = 50.0 / grid_settings.sbase
+    q_pu = 25.0 / grid_settings.sbase
+    expected_load_delta = complex(p_pu, q_pu)
+
+    # Bus Two (index 1) diagonal must increase by Y_load; Bus One unchanged by load.
+    assert abs((y_fault[1, 1] - y_base[1, 1]) - (1.0 / (1j * 0.25) + expected_load_delta)
+               - (y_fault[1, 1] - y_base[1, 1] - (1.0 / (1j * 0.25) + expected_load_delta))) < 1e-12
+    # Simpler direct check:
+    gen_norton = 1.0 / (1j * 0.25)  # stamped on Bus One (index 0)
+    assert abs(y_fault[0, 0] - y_base[0, 0] - gen_norton) < 1e-12
+    assert abs(y_fault[1, 1] - y_base[1, 1] - expected_load_delta) < 1e-12
 
 
 def test_simulate_symmetrical_fault_uses_znn_and_zkn_formulae():
@@ -110,16 +133,12 @@ def test_fault_study_requires_generator_subtransient_reactance():
     circuit.generators["G1"].x_subtransient = None
     study = FaultStudy()
 
-    # With no subtransient reactance, no Norton shunt is added.
-    y_fault = study._calc_ybus_fault(circuit)
-    assert np.allclose(y_fault.values, circuit.y_bus.values)
-
-    # Two-bus series-only network is singular without generator shunt support.
+    # FaultStudy must reject a circuit whose generator has x_subtransient=None.
     try:
         study.solve(circuit, fault_bus_name="One")
-        assert False, "Expected ValueError for singular Y-bus when x_subtransient is missing"
+        assert False, "Expected ValueError for missing x_subtransient"
     except ValueError as exc:
-        assert "singular" in str(exc)
+        assert "missing x_subtransient" in str(exc)
 
 
 def test_fault_study_rejects_unknown_fault_bus_name():
@@ -133,12 +152,12 @@ def test_fault_study_rejects_unknown_fault_bus_name():
         assert "fault_bus_name" in str(exc)
 
 
-def test_five_bus_fault_study_no_subtransient_print_ybus_and_bus1_fault_results():
-    circuit = _build_five_bus_fault_system_no_subtransient()
+def test_five_bus_fault_study_default_subtransient_print_ybus_and_bus1_fault_results():
+    circuit = _build_five_bus_fault_system()
     study = FaultStudy()
 
     ybus_fault = study._calc_ybus_fault(circuit)
-    print("\n=== 5-Bus ybus_fault (no generator subtransient reactances) ===")
+    print("\n=== 5-Bus ybus_fault (generator x_subtransient=1.0 pu default) ===")
     print(ybus_fault)
 
     result = study.solve(circuit, fault_bus_name="One")

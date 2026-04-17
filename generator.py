@@ -1,6 +1,5 @@
 from __future__ import annotations
 import math
-import pytest
 from typing import Optional
 
 from settings import grid_settings
@@ -14,7 +13,7 @@ class Generator:
         bus_name: Name of the connected bus (non-empty string).
         mw_setpoint: Active power setpoint in MW (float).
         v_setpoint: Voltage magnitude setpoint in p.u. (float or None).
-        x_subtransient: Generator subtransient reactance in p.u. (float or None).
+        x_subtransient: Generator subtransient reactance in p.u. (float or None). Default 1.0.
         p: per unit real power injection (float).
     """
 
@@ -24,7 +23,7 @@ class Generator:
         bus_name: str,
         mw_setpoint: float,
         v_setpoint: float | None = None,
-        x_subtransient: float | None = None,
+        x_subtransient: float | None = 1.0,
     ) -> None:
         # store raw values first so __repr__ is safe even if validation fails
         self._name = name
