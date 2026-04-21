@@ -66,7 +66,7 @@ def test_calc_ybus_fault_adds_generator_norton_shunt():
 
 
 def test_calc_ybus_fault_adds_load_admittance():
-    """Load admittance Y = P_pu + jQ_pu must be stamped on the load bus diagonal."""
+    """Load admittance Y = (P_pu - jQ_pu) / |V_prefault|^2 defaults to 1.0 pu voltage."""
     circuit = _build_two_bus_fault_system()
     circuit.add_load("LD2", "Two", mw=50.0, mvar=25.0)
     study = FaultStudy()
@@ -77,13 +77,34 @@ def test_calc_ybus_fault_adds_load_admittance():
     from settings import grid_settings
     p_pu = 50.0 / grid_settings.sbase
     q_pu = 25.0 / grid_settings.sbase
-    expected_load_delta = complex(p_pu, q_pu)
+    # With no vprefault_dict, defaults to 1.0 pu: Y_load = (P - jQ) / (1.0)^2
+    expected_load_delta = complex(p_pu, -q_pu)
 
-    # Bus Two (index 1) diagonal must increase by Y_load; Bus One unchanged by load.
-    assert abs((y_fault[1, 1] - y_base[1, 1]) - (1.0 / (1j * 0.25) + expected_load_delta)
-               - (y_fault[1, 1] - y_base[1, 1] - (1.0 / (1j * 0.25) + expected_load_delta))) < 1e-12
-    # Simpler direct check:
     gen_norton = 1.0 / (1j * 0.25)  # stamped on Bus One (index 0)
+    assert abs(y_fault[0, 0] - y_base[0, 0] - gen_norton) < 1e-12
+    assert abs(y_fault[1, 1] - y_base[1, 1] - expected_load_delta) < 1e-12
+
+
+def test_calc_ybus_fault_scales_load_admittance_by_voltage():
+    """Load admittance correctly scales by 1/|V_prefault|^2 when provided."""
+    circuit = _build_two_bus_fault_system()
+    circuit.add_load("LD2", "Two", mw=50.0, mvar=25.0)
+    study = FaultStudy()
+
+    from settings import grid_settings
+    p_pu = 50.0 / grid_settings.sbase
+    q_pu = 25.0 / grid_settings.sbase
+
+    # Test with V_prefault = 0.95 pu (typical depressed voltage condition)
+    v_prefault = 0.95
+    vprefault_dict = {"Two": v_prefault}
+    y_fault = study._calc_ybus_fault(circuit, vprefault_dict).to_numpy(dtype=np.complex128)
+    y_base = circuit.y_bus.to_numpy(dtype=np.complex128)
+
+    # Expected: Y_load = (P - jQ) / V^2
+    expected_load_delta = complex(p_pu, -q_pu) / (v_prefault ** 2)
+    gen_norton = 1.0 / (1j * 0.25)
+
     assert abs(y_fault[0, 0] - y_base[0, 0] - gen_norton) < 1e-12
     assert abs(y_fault[1, 1] - y_base[1, 1] - expected_load_delta) < 1e-12
 

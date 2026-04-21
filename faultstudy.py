@@ -28,7 +28,7 @@ class FaultStudy:
 
         return complex(vf)
 
-    def _calc_ybus_fault(self, circuit) -> pd.DataFrame:
+    def _calc_ybus_fault(self, circuit, vprefault_dict: dict[str, float] | None = None) -> pd.DataFrame:
         """
         Build fault-condition Y-bus matrix from the circuit base Y-bus.
 
@@ -40,9 +40,13 @@ class FaultStudy:
 
         2. Load admittance at each load bus, treating each load as a
            constant-impedance element during the fault:
-               Y_load = P_pu + j*Q_pu
-           where P_pu and Q_pu are the load real and reactive powers in per unit.
+               Y_load = (P_pu - j*Q_pu) / |V_prefault|^2
+           where P_pu and Q_pu are in per unit, and V_prefault is the pre-fault
+           bus voltage magnitude. Defaults to 1.0 pu for loads not in vprefault_dict.
         """
+        if vprefault_dict is None:
+            vprefault_dict = {}
+
         ybus_base = circuit.y_bus
         ybus_fault = ybus_base.copy(deep=True)
 
@@ -65,14 +69,15 @@ class FaultStudy:
                 )
             p_pu = float(load.calc_p())
             q_pu = float(load.calc_q())
-            y_load = complex(p_pu, q_pu)
+            v_prefault = vprefault_dict.get(bus_name, 1.0)
+            y_load = complex(p_pu, -q_pu) / (v_prefault ** 2)
             ybus_fault.loc[bus_name, bus_name] += y_load
 
         return ybus_fault
 
-    def _calc_zbus_fault(self, circuit) -> pd.DataFrame:
+    def _calc_zbus_fault(self, circuit, vprefault_dict: dict[str, float] | None = None) -> pd.DataFrame:
         """Compute fault-condition Z-bus as inverse of fault-condition Y-bus."""
-        ybus_fault = self._calc_ybus_fault(circuit)
+        ybus_fault = self._calc_ybus_fault(circuit, vprefault_dict)
         try:
             zbus_fault_np = np.linalg.inv(ybus_fault.values)
         except np.linalg.LinAlgError as exc:
@@ -84,18 +89,40 @@ class FaultStudy:
             columns=ybus_fault.columns,
         )
 
-    def solve(self, circuit, vf: complex = 1.0 + 0.0j, fault_bus_name: str = "") -> dict:
+    def solve(self, circuit, vf: complex = 1.0 + 0.0j, fault_bus_name: str = "", vprefault_dict: dict[str, float] | None = None) -> dict:
         """
         Simulate a solid 3-phase fault at the requested bus.
+
+        Parameters:
+          circuit: Power system circuit model
+          vf: Fault voltage magnitude (complex or float, in per unit)
+          fault_bus_name: Name of the bus where the fault occurs
+          vprefault_dict: Optional dict {bus_name: voltage_pu} for pre-fault bus
+                          voltages. Defaults to 1.0 pu for any load bus not in
+                          the dict. Used to scale load admittances per the
+                          constant-impedance formula.
 
         Uses:
           Ifn = Vf / Znn
           Ek = (1 - Zkn / Znn) * Vf
 
         Returns complex per-unit values and does not mutate the input circuit.
+
+        Examples:
+          # Simple fault study with default 1.0 pu pre-fault voltages
+          study = FaultStudy()
+          result = study.solve(circuit, fault_bus_name="Bus2")
+          print(f"Fault current: {result['ifn_pu']} pu")
+
+          # Fault study with actual pre-fault voltages from power flow solution
+          pf = PowerFlow()
+          pf_result = pf.solve(circuit)
+          vprefault = {bus_name: abs(pf_result["bus_voltages"][bus_name])
+                       for bus_name in circuit.buses}
+          result = study.solve(circuit, fault_bus_name="Bus2", vprefault_dict=vprefault)
         """
         vf_complex = self._validate_fault_inputs(circuit, fault_bus_name, vf)
-        zbus_fault = self._calc_zbus_fault(circuit)
+        zbus_fault = self._calc_zbus_fault(circuit, vprefault_dict)
         zbus_np = zbus_fault.to_numpy(dtype=np.complex128)
         bus_names = list(zbus_fault.index)
 
@@ -121,5 +148,5 @@ class FaultStudy:
             "znn": znn,
             "post_fault_bus_voltages": bus_voltage_magnitudes,
             "zbus_fault": zbus_fault,
-            "ybus_fault": self._calc_ybus_fault(circuit),
+            "ybus_fault": self._calc_ybus_fault(circuit, vprefault_dict),
         }
