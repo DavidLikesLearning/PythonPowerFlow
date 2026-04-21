@@ -45,7 +45,7 @@ The DC OPF assumes $|V_i| \equiv 1\,\text{pu}$ and linearises around small angle
 
 $$\mathbf{B}_{\text{DC}}\,\mathbf{\Theta} = \mathbf{A}_{\text{gen}}\,\mathbf{P}_g - \mathbf{P}_{\text{load}}, \qquad \theta_{\text{slack}} = 0, \qquad P_g^{\min} \leq P_g \leq P_g^{\max}$$
 
-where $[\mathbf{B}_{\text{DC}}]_{ij} = -x_{ij}/(r_{ij}^2+x_{ij}^2)$ for $i \neq j$ (matching pandapower's susceptance convention). Branch flows are lossless: $P_{ij} = b_{ij}(\theta_i - \theta_j)$, $P_{to} = -P_{fr}$, $Q \equiv 0$.
+where $[\mathbf{B}\_{\text{DC}} ]\_{ij} = -x_{ij}/(r_{ij}^2+x_{ij}^2)$ for $i \neq j$ (matching pandapower's susceptance convention). Branch flows are lossless: $P_{ij} = b_{ij}(\theta_i - \theta_j)$, $P_{to} = -P_{fr}$, $Q \equiv 0$.
 
 ---
 
