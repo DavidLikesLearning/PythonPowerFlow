@@ -17,14 +17,14 @@ def _build_two_bus_timeseries_system() -> Circuit:
     return circuit
 
 
-def test_timeseries_shared_modifier_runs_and_aggregates(tmp_path):
+def test_timeseries_per_load_modifier_runs_and_aggregates(tmp_path):
     csv_path = tmp_path / "profile.csv"
-    csv_path.write_text("time,load\n1,1.0\n2,0.5\n3,0.75\n4,1.0\n", encoding="utf-8")
+    csv_path.write_text("time,LD2_scale\n1,1.0\n2,0.5\n3,0.75\n4,1.0\n", encoding="utf-8")
 
     circuit = _build_two_bus_timeseries_system()
     ts = TimeSeriesPowerFlow()
     ts.load_profile(csv_path, step_column="time")
-    ts.assign_shared_modifier(load_names=["LD2"], modifier_column="load")
+    ts.assign_per_load_modifiers({"LD2_scale": "LD2"})
     results = ts.run(circuit)
 
     assert len(results) == 4
@@ -42,12 +42,12 @@ def test_timeseries_shared_modifier_runs_and_aggregates(tmp_path):
 
 def test_timeseries_save_results_csv(tmp_path):
     csv_path = tmp_path / "profile.csv"
-    csv_path.write_text("time,load\n1,1.0\n2,0.5\n", encoding="utf-8")
+    csv_path.write_text("time,LD2_scale\n1,1.0\n2,0.5\n", encoding="utf-8")
 
     circuit = _build_two_bus_timeseries_system()
     ts = TimeSeriesPowerFlow()
     ts.load_profile(csv_path, step_column="time")
-    ts.assign_shared_modifier(load_names=["LD2"], modifier_column="load")
+    ts.assign_per_load_modifiers({"LD2_scale": "LD2"})
     results = ts.run(circuit)
 
     out_path = tmp_path / "timeseries_results.csv"
