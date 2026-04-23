@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Time-Series Power Flow Enhancement Proposal</title>
+  <style>
+    :root {
+      --bg: #f7f9fc;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #4b5563;
+      --accent: #0f766e;
+      --border: #dbe4ee;
+      --code-bg: #0b1020;
+      --code-text: #e6edf3;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(180deg, #f7f9fc 0%, #eef4fb 100%);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 980px;
+      margin: 2rem auto;
+      padding: 1.5rem 2rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 8px 30px rgba(8, 15, 35, 0.06);
+    }
+
+    h1, h2, h3 {
+      color: #0b3d91;
+      line-height: 1.25;
+    }
+
+    h1 {
+      margin-top: 0;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 0.6rem;
+    }
+
+    h2 {
+      margin-top: 2rem;
+      border-left: 4px solid var(--accent);
+      padding-left: 0.55rem;
+    }
+
+    h3 {
+      margin-top: 1.4rem;
+      color: #174ea6;
+    }
+
+    p {
+      color: var(--text);
+    }
+
+    ul, ol {
+      margin-top: 0.3rem;
+      margin-bottom: 0.95rem;
+    }
+
+    li {
+      margin: 0.2rem 0;
+    }
+
+    code {
+      font-family: "Consolas", "Courier New", monospace;
+      background: #eff3f8;
+      border: 1px solid #e3e9f1;
+      border-radius: 4px;
+      padding: 0.08rem 0.32rem;
+      color: #0b3d91;
+    }
+
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      border-radius: 10px;
+      border: 1px solid #1b2340;
+      padding: 0.9rem 1rem;
+      overflow-x: auto;
+    }
+
+    pre code {
+      background: transparent;
+      border: none;
+      color: inherit;
+      padding: 0;
+    }
+
+    .note {
+      margin-top: 1.4rem;
+      padding: 0.75rem 0.95rem;
+      border-left: 4px solid #1d4ed8;
+      background: #edf4ff;
+      color: var(--muted);
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Time-Series Power Flow Enhancement Proposal</h1>
+
+    <h2>1. Purpose</h2>
+    <p>
+      This proposal describes an enhancement to add time-series simulation capability on top of the
+      existing steady-state Newton-Raphson power flow solver.
+    </p>
+    <p>The enhancement allows a user to:</p>
+    <ul>
+      <li>Provide a CSV containing time steps (or index) and load modifiers.</li>
+      <li>Map modifier columns to one or more named loads in the network model.</li>
+      <li>Run one power flow solve per time step.</li>
+      <li>Aggregate bus voltage and angle results into a single tabular output.</li>
+      <li>Optionally export results to CSV for post-processing and plotting.</li>
+    </ul>
+
+    <h2>2. Problem Statement</h2>
+    <p>
+      The current solver computes a single operating point for one set of static inputs. Practical
+      studies often require observing how bus voltages and angles evolve as load changes over time.
+      Without a time-series layer, users must manually repeat model edits and solves for each time step,
+      which is error-prone and difficult to validate.
+    </p>
+
+    <h2>3. Goals and Non-Goals</h2>
+
+    <h3>Goals</h3>
+    <ul>
+      <li>Reuse existing power flow solver logic without modifying solver math.</li>
+      <li>Provide a clean API for loading time-profile data from CSV.</li>
+      <li>Support both:</li>
+      <li>One shared modifier column mapped to multiple loads.</li>
+      <li>Per-load modifier columns mapped explicitly.</li>
+      <li>Return a unified pandas DataFrame with time-indexed results.</li>
+      <li>Support CSV export of final results.</li>
+      <li>Preserve circuit integrity by restoring original load values after simulation.</li>
+    </ul>
+
+    <h3>Non-Goals (MVP)</h3>
+    <ul>
+      <li>Generator dispatch time profiles.</li>
+      <li>Tap-changing transformer controls.</li>
+      <li>Contingency switching per time step.</li>
+      <li>Parallel/distributed simulation execution.</li>
+      <li>Built-in plotting utilities.</li>
+    </ul>
+
+    <h2>4. Proposed Architecture</h2>
+
+    <h2>4.1 High-Level Design</h2>
+    <p>Add a new module dedicated to orchestration logic:</p>
+    <ul>
+      <li><code>timeseries.py</code></li>
+      <li>
+        Owns profile parsing, assignment mapping, per-step load updates, repeated solver calls,
+        and result aggregation.
+      </li>
+    </ul>
+    <p>Keep these modules unchanged (or minimally touched only for compatibility):</p>
+    <ul>
+      <li><code>powerflow.py</code>: steady-state solver used as execution engine.</li>
+      <li><code>circuit.py</code>: data container for buses, loads, generators, and Y-bus.</li>
+      <li><code>load.py</code>: source of MW/MVAr and per-unit conversion.</li>
+    </ul>
+
+    <h3>4.2 Component Responsibilities</h3>
+
+    <h3>TimeSeriesPowerFlow (new orchestration class)</h3>
+    <p>Responsibilities:</p>
+    <ul>
+      <li>Load profile CSV and validate required columns.</li>
+      <li>Configure modifier-to-load assignment rules.</li>
+      <li>Snapshot baseline load values.</li>
+      <li>For each time step:</li>
+      <li>Apply modifiers to target loads.</li>
+      <li>Invoke <code>PowerFlow.solve(...)</code>.</li>
+      <li>Capture bus voltages and angles.</li>
+      <li>Capture solve metadata (converged, iterations, mismatch).</li>
+      <li>Restore baseline load values after run completion.</li>
+      <li>Return and optionally persist output DataFrame.</li>
+    </ul>
+
+    <h3>AssignmentConfig (lightweight config model)</h3>
+    <p>Encapsulates mapping mode:</p>
+    <ul>
+      <li>Shared mode: one modifier column applied to a list of load names.</li>
+      <li>Per-load mode: each modifier column maps to a specific load name.</li>
+    </ul>
+
+    <h3>4.3 Data Flow</h3>
+    <ol>
+      <li>User loads profile CSV.</li>
+      <li>User defines assignment mapping.</li>
+      <li>Runner validates:</li>
+      <li>Profile columns.</li>
+      <li>Assigned load names exist in circuit.</li>
+      <li>Modifiers are numeric and non-negative.</li>
+      <li>Runner loops over rows:</li>
+      <li>Computes step load values from baseline × modifier.</li>
+      <li>Executes one power flow solve.</li>
+      <li>Appends structured row to result list.</li>
+      <li>Runner builds pandas DataFrame and returns it.</li>
+      <li>Optional write to CSV.</li>
+    </ol>
+
+    <h2>5. Input and Output Specifications</h2>
+
+    <h3>5.1 Input CSV Formats</h3>
+
+    <h3>Shared modifier format</h3>
+    <pre><code>time,load
+1,1.0
+2,0.5
+3,0.75
+4,1.0</code></pre>
+    <p>Interpretation:</p>
+    <ul>
+      <li>A single profile column (<code>load</code>) scales all assigned loads.</li>
+    </ul>
+
+    <h3>Per-load modifier format</h3>
+    <pre><code>time,LD2_scale,LD3_scale
+1,1.0,1.0
+2,0.8,0.9
+3,1.1,0.7
+4,1.0,1.0</code></pre>
+    <p>Interpretation:</p>
+    <ul>
+      <li>Each modifier column is mapped independently to a specific load.</li>
+    </ul>
+
+    <h3>5.2 Load Scaling Rule</h3>
+    <p>For each assigned load and each time step:</p>
+    <ul>
+      <li><code>MW_step = MW_base * modifier</code></li>
+      <li><code>MVAr_step = MVAr_base * modifier</code></li>
+    </ul>
+    <p>Both real and reactive powers scale by the same factor in MVP.</p>
+
+    <h3>5.3 Output DataFrame Schema</h3>
+    <p>Suggested columns:</p>
+    <ul>
+      <li><code>step</code> (time or index)</li>
+      <li><code>modifier_&lt;LoadName&gt;</code> for each assigned load</li>
+      <li><code>V_&lt;BusName&gt;_pu</code> for each bus</li>
+      <li><code>angle_&lt;BusName&gt;_deg</code> for each bus</li>
+      <li><code>converged</code></li>
+      <li><code>iterations</code></li>
+      <li><code>max_mismatch</code></li>
+    </ul>
+    <p>This structure is intentionally flat for easy CSV export and plotting.</p>
+
+    <h2>6. Implementation Plan</h2>
+
+    <h3>Phase 1: Module Skeleton</h3>
+    <ul>
+      <li>Add <code>timeseries.py</code> with:</li>
+      <li>Assignment config object.</li>
+      <li><code>load_profile(...)</code>.</li>
+      <li>Assignment methods.</li>
+      <li><code>run(...)</code> orchestration.</li>
+      <li><code>save_results_csv(...)</code>.</li>
+    </ul>
+
+    <h3>Phase 2: Validation and Error Handling</h3>
+    <ul>
+      <li>Validate profile column availability.</li>
+      <li>Validate load-name existence.</li>
+      <li>Validate numeric modifiers and non-negative range.</li>
+      <li>Provide clear error messages identifying bad column, bad load, or bad value.</li>
+    </ul>
+
+    <h3>Phase 3: Result Modeling</h3>
+    <ul>
+      <li>Standardize output naming conventions.</li>
+      <li>Include solver metadata to detect problematic steps.</li>
+      <li>Ensure deterministic row ordering by profile order.</li>
+    </ul>
+
+    <h3>Phase 4: Integration and Usability</h3>
+    <ul>
+      <li>Add optional helper example in main flow (or dedicated demo script).</li>
+      <li>Add minimal user docs with CSV examples and mapping examples.</li>
+    </ul>
+
+    <h2>7. Testing Strategy</h2>
+
+    <h3>7.1 Unit Tests (module behavior)</h3>
+    <ul>
+      <li>CSV load succeeds with valid file.</li>
+      <li>Missing file raises <code>FileNotFoundError</code>.</li>
+      <li>Missing step column raises <code>ValueError</code>.</li>
+      <li>Empty assignment raises <code>ValueError</code>.</li>
+      <li>Invalid load mapping raises <code>ValueError</code>.</li>
+      <li>Negative modifiers raise <code>ValueError</code>.</li>
+      <li>Result export creates expected CSV.</li>
+    </ul>
+
+    <h3>7.2 Functional Tests (solver integration)</h3>
+    <ul>
+      <li>Build small deterministic network (e.g., 2-bus).</li>
+      <li>Apply changing load profile.</li>
+      <li>Assert that at least one bus voltage changes across steps.</li>
+      <li>Assert row count equals number of time steps.</li>
+      <li>Assert returned columns include all buses and metadata fields.</li>
+    </ul>
+
+    <h3>7.3 Regression Tests</h3>
+    <ul>
+      <li>Fixed profile + fixed network should reproduce same output across runs.</li>
+      <li>Snapshot selected values with tolerance to catch unintended behavior drift.</li>
+    </ul>
+
+    <h2>8. Validation Against PowerWorld Time-Series Examples</h2>
+
+    <h3>8.1 Validation Objective</h3>
+    <p>
+      Demonstrate that the enhancement produces time-series voltage/angle trajectories consistent with
+      PowerWorld for equivalent network and load profiles.
+    </p>
+
+    <h3>8.2 Alignment Requirements</h3>
+    <p>Before comparing results, ensure both tools share:</p>
+    <ul>
+      <li>Same network topology and per-unit base.</li>
+      <li>Same line/transformer/generator/load parameters.</li>
+      <li>Same slack/PV/PQ bus assignments.</li>
+      <li>Same load profile per step.</li>
+      <li>Same convergence tolerances where possible.</li>
+    </ul>
+
+    <h3>8.3 Comparison Procedure</h3>
+    <ol>
+      <li>Build identical test case in both environments (recommended: 5-bus benchmark).</li>
+      <li>Apply identical time-series load multipliers.</li>
+      <li>Export per-step bus voltage magnitudes and angles from both tools.</li>
+      <li>Join datasets on <code>(step, bus)</code>.</li>
+      <li>Compute error metrics:</li>
+      <li>Absolute voltage error: <code>|V_py - V_pw|</code></li>
+      <li>Absolute angle error: <code>|theta_py - theta_pw|</code></li>
+      <li>Optional RMS errors across all steps and buses.</li>
+      <li>Flag steps exceeding thresholds.</li>
+    </ol>
+
+    <h3>8.4 Suggested Acceptance Criteria</h3>
+    <ul>
+      <li>Voltage magnitude max absolute error &lt;= 1e-3 pu.</li>
+      <li>Angle max absolute error &lt;= 0.05 deg.</li>
+      <li>No systematic drift trend across time steps.</li>
+      <li>Convergence statuses match for all valid steps.</li>
+    </ul>
+
+    <h3>8.5 Edge-Case Validation Matrix</h3>
+    <p>Include PowerWorld comparison for:</p>
+    <ul>
+      <li>Flat profile (all modifiers 1.0).</li>
+      <li>Light-to-heavy load ramp.</li>
+      <li>Oscillating profile (up/down changes).</li>
+      <li>Multi-load independent profiles.</li>
+      <li>Near-stressed operating points (high loading).</li>
+    </ul>
+
+    <h2>9. Risks and Mitigations</h2>
+    <ul>
+      <li>Risk: Profile contains invalid or missing numeric values.</li>
+      <li>Mitigation: strict validation with explicit error messages.</li>
+      <li>Risk: Non-convergent steps produce incomplete outputs.</li>
+      <li>Mitigation: include <code>converged</code> and <code>max_mismatch</code> columns per step.</li>
+      <li>Risk: Cumulative load mutation across steps.</li>
+      <li>Mitigation: always scale from baseline snapshot; restore at end.</li>
+      <li>Risk: Differences vs PowerWorld due to modeling assumptions.</li>
+      <li>Mitigation: document assumptions, align solver settings, and compare with tolerance bands.</li>
+    </ul>
+
+    <h2>10. Future Enhancements</h2>
+    <ul>
+      <li>Warm-start option (use previous step voltages/angles as initial conditions).</li>
+      <li>Time-series generator dispatch and voltage setpoint profiles.</li>
+      <li>Built-in plotting helpers for selected buses.</li>
+      <li>Scenario batching and parallel execution.</li>
+      <li>Enhanced reporting (summary stats, worst-step diagnostics).</li>
+    </ul>
+
+    <h2>11. Conclusion</h2>
+    <p>
+      This enhancement introduces a clear, modular time-series execution layer that reuses the existing
+      power flow solver and exposes outputs in an analysis-ready pandas DataFrame. The architecture is
+      intentionally incremental: easy to test, easy to validate against PowerWorld, and extensible for
+      future operational studies.
+    </p>
+
+    <div class="note">
+      Source document: <code>timeseries_proposal.md</code>
+    </div>
+  </main>
+</body>
+</html>
