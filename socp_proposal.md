@@ -13,7 +13,7 @@ This project extends the PythonPowerFlow `Circuit` framework with two OPF solver
 
 ### AC SOCP Relaxation
 
-The AC OPF is relaxed to a Second-Order Cone Program (SOCP) following Jabr (2006) and Lavaei & Low (2012). The key substitution replaces the nonlinear voltage products with lifted variables:
+The AC OPF is relaxed to a Second-Order Cone Program (SOCP) following Jabr (2006, 2007, 2008) and Lavaei & Low (2012). The key substitution replaces the nonlinear voltage products with lifted variables:
 
 $$W_{ii} = |V_i|^2, \qquad W_{ij} = V_i V_j^* = W_{ij}^R + j\,W_{ij}^I$$
 
@@ -112,3 +112,14 @@ Both solvers are tested in `test_opfs.py` against **pandapower 3.4.0** on a 3-bu
 | Generator dispatch | DC OPF | `pp.rundcopp` | 1 MW |
 | Voltage angles | DC OPF | `pp.rundcopp` | 0.1° |
 | Branch real power | DC OPF | `pp.rundcopp` | 5 × 10⁻³ pu |
+
+---
+## Bibliography
+* Jabr, R. A. 2006. Radial distribution load flow using conic programming. IEEE Transactions
+on Power Systems 21(3) 1458–1459.
+* Jabr, R. A. 2007. A conic quadratic format for the load flow equations of meshed networks.
+IEEE Transactions on Power Systems 22(4) 2285–2286.
+* Jabr, R. A. 2008. Optimal power flow using an extended conic quadratic formulation. IEEE
+Transactions on Power Systems 23(3) 1000–1008
+* Lavaei, J., S. H. Low. 2012. Zero duality gap in optimal power flow problem. IEEE Transactions
+on Power Systems 27(1) 92–107.
