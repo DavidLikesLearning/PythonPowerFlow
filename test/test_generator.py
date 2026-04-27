@@ -18,6 +18,17 @@ def test_generator_v_setpoint_optional():
     g.v_setpoint = 1.0
     assert g.v_setpoint == 1.0
 
+
+def test_generator_x_subtransient_defaults_to_one():
+    g = Generator("G_default", "BUS1", mw_setpoint=100.0)
+    assert g.x_subtransient == 1.0
+
+
+def test_generator_x_subtransient_can_be_set_to_none():
+    g = Generator("G_none", "BUS1", mw_setpoint=100.0)
+    g.x_subtransient = None
+    assert g.x_subtransient is None
+
 def test_generator_repr_and_str():
     g = Generator("G3", "BUS3", mw_setpoint=100.0, v_setpoint=1.0, x_subtransient=0.25)
     rep = repr(g)
