@@ -76,15 +76,20 @@ def print_bus_summary(
 
 
 def print_fault_results(results: dict, print_decimals: int) -> None:
-    """Print every field returned by FaultStudy.solve() in a readable format."""
-    print_heading("FaultStudy.solve() Output")
-    for key, value in results.items():
-        print(f"{key}:")
-        if isinstance(value, np.ndarray):
-            print(np.array2string(value, precision=print_decimals, suppress_small=False))
-        else:
-            print(value)
-        print()
+    """Print fault current first, then post-fault voltages bus-by-bus."""
+    print_heading("FaultStudy Bus Summary")
+    print(
+        f"FAULT | "
+        f"bus={results['fault_bus_name']} | "
+        f"If={results['ifn_pu']:.{print_decimals}f} pu | "
+        f"If_complex={results['ifn']:.{print_decimals}f}"
+    )
+
+    for bus_name, voltage in results["post_fault_bus_voltages"].items():
+        print(
+            f"{bus_name:>5} | "
+            f"V_fault={voltage:.{print_decimals}f} pu"
+        )
 
 
 def main() -> None:
@@ -110,15 +115,10 @@ def main() -> None:
     pf = PowerFlow()
     results = pf.solve(circuit, ybus_np, tol=1e-3, max_iter=50)
 
-    print_solve_results(results, print_decimals)
     print_bus_summary(circuit, results, ybus_np, print_decimals)
 
     print_heading("Running 3-Phase Symmetrical Fault Study")
     fs = FaultStudy()
-    ybus_fault = fs._calc_ybus_fault(circuit)
-    print("Fault-condition Y-bus (ybus_fault):")
-    print(ybus_fault)
-
     fault_results = fs.solve(circuit, fault_bus_name="One")
     print_fault_results(fault_results, print_decimals)
 
