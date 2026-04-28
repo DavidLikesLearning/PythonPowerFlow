@@ -114,3 +114,29 @@ ts.save_results_csv("timeseries_results.csv")
 | 4 | 1.00 | 1.0000 | 0.9724 | 0.0 | -2.87 | True | 4 | 8.1e-07 |
 
 The `results` DataFrame is also stored as `ts.results` after the run.
+
+---
+
+## Standalone Example Script
+
+For a minimal end-to-end example, run `timeseries_main.py` from the repository root:
+
+```python
+PYTHONPATH=. .venv/bin/python timeseries_main.py
+```
+
+This script builds the simple two-bus time-series system used in the tests, writes an input profile CSV with the load scale sequence `1.0, 0.75, 0.5, 0.75, 1.0`, runs the study, prints the Y-bus and full time-series results, and saves:
+
+- `timeseries_input.csv`
+- `timeseries_output.csv`
+
+The generated input profile has this form:
+
+```csv
+time,LD2_scale
+1,1.0
+2,0.75
+3,0.5
+4,0.75
+5,1.0
+```

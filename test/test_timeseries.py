@@ -5,7 +5,12 @@ from pathlib import Path
 
 from bus import BusType
 from circuit import Circuit
+from powerflow import PowerFlow
 from timeseries import TimeSeriesPowerFlow
+
+
+_VOLTAGE_TOL = 1e-3   # per-unit
+_ANGLE_TOL = 1e-2     # degrees
 
 
 def _build_two_bus_timeseries_system() -> Circuit:
@@ -20,9 +25,19 @@ def _build_two_bus_timeseries_system() -> Circuit:
     return circuit
 
 
+def _solve_two_bus_step(load_scale: float) -> dict[str, np.ndarray | bool]:
+    circuit = _build_two_bus_timeseries_system()
+    circuit.loads["LD2"].mw *= load_scale
+    circuit.loads["LD2"].mvar *= load_scale
+
+    solver = PowerFlow()
+    return solver.solve(circuit)
+
+
 def test_timeseries_per_load_modifier_runs_and_aggregates(tmp_path):
     csv_path = tmp_path / "profile.csv"
     csv_path.write_text("time,LD2_scale\n1,1.0\n2,0.5\n3,0.75\n4,1.0\n", encoding="utf-8")
+    expected_modifiers = [1.0, 0.5, 0.75, 1.0]
 
     circuit = _build_two_bus_timeseries_system()
     ts = TimeSeriesPowerFlow()
@@ -38,9 +53,24 @@ def test_timeseries_per_load_modifier_runs_and_aggregates(tmp_path):
     assert "angle_One_deg" in results.columns
     assert "angle_Two_deg" in results.columns
     assert "converged" in results.columns
+    assert list(results["step"]) == [1, 2, 3, 4]
+    np.testing.assert_allclose(results["modifier_LD2"], expected_modifiers, rtol=0, atol=0)
 
-    # The load modifier changes over time, so voltage should not be constant.
-    assert results["V_Two_pu"].nunique() > 1
+    expected_steps = [_solve_two_bus_step(load_scale) for load_scale in expected_modifiers]
+    for row, expected in zip(results.itertuples(index=False), expected_steps):
+        np.testing.assert_allclose(
+            [row.V_One_pu, row.V_Two_pu],
+            expected["voltages"],
+            atol=_VOLTAGE_TOL,
+            rtol=0,
+        )
+        np.testing.assert_allclose(
+            [row.angle_One_deg, row.angle_Two_deg],
+            expected["angles_deg"],
+            atol=_ANGLE_TOL,
+            rtol=0,
+        )
+        assert row.converged is expected["converged"]
 
 
 def test_timeseries_save_results_csv(tmp_path):
@@ -100,10 +130,6 @@ def test_timeseries_per_load_modifier_mapping(tmp_path):
 _FIXTURES = Path(__file__).parent / "fixtures"
 _PROFILE_CSV = _FIXTURES / "timeseries_profile.csv"
 _EXPECTED_CSV = _FIXTURES / "timeseries_expected_results.csv"
-
-_VOLTAGE_TOL = 1e-3   # per-unit
-_ANGLE_TOL = 1e-2     # degrees
-
 
 @pytest.mark.skipif(
     not (_PROFILE_CSV.exists() and _EXPECTED_CSV.exists()),
