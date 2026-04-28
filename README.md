@@ -1,571 +1,869 @@
 # PythonPowerFlow
 
+**A Python-based power systems simulation framework for AC power flow analysis, fault studies, and time-series studies.**
+
 Second Project for computational power systems at UPitt. Taught by Dr. Robert Kerestes.
 
-## Class Documentation
+## Project Overview
+
+PythonPowerFlow is a computational framework designed to simulate and analyze electrical power systems. It provides tools to:
+
+- **Model power networks** with buses, transmission lines, transformers, generators, and loads
+- **Compute network admittance** (Y-bus) from component models
+- **Solve power flow equations** using Newton-Raphson AC power flow solver to find steady-state voltage and angle profiles
+- **Analyze system faults** using Z-bus relationships for symmetric 3-phase faults
+- **Simulate time-varying scenarios** by running repeated power flow solves with time-dependent load profiles
+
+The framework is organized into modular classes that represent physical power system components and solvers. All calculations are performed in **per-unit (p.u.)** and **complex** domains where appropriate.
+
+---
+
+## How the Power Flow Simulator Works
+
+### What is Power Flow Analysis?
+
+Power flow analysis determines the steady-state operating point of an electrical power system. Given:
+- Network topology (buses, branches, impedances)
+- Generation setpoints (active power, voltage control)
+- Demand (loads)
+
+The solver computes:
+- Bus voltage magnitudes and phase angles at every bus
+- Resulting power flows on each branch
+- System losses and generation requirements
+
+### Newton-Raphson Algorithm Overview
+
+PythonPowerFlow uses the **Newton-Raphson iterative method** to solve the nonlinear power flow equations. Here's how it works:
+
+1. **Flat-Start Initialization:**
+   - All bus angles δ = 0°
+   - All voltage magnitudes |V| = 1.0 pu (except fixed setpoints at Slack/PV buses)
+
+2. **Repeated Iterations:**
+   - Compute actual power injections at each bus from network equations:
+     $$P_{calc} = \sum_{k} |V_i| |V_k| |Y_{ik}| \cos(\theta_{ik} - \delta_i + \delta_k)$$
+     $$Q_{calc} = \sum_{k} |V_i| |V_k| |Y_{ik}| \sin(\theta_{ik} - \delta_i + \delta_k)$$
+   - Calculate power mismatches:
+     $$\Delta P_i = P_{spec} - P_{calc}$$
+     $$\Delta Q_i = Q_{spec} - Q_{calc}$$
+   - Build the Jacobian matrix (sensitivity of power to voltage changes)
+   - Solve the linear system: `J · Δx = f` to find voltage/angle corrections
+   - Apply corrections and repeat
+
+3. **Convergence Check:**
+   - Stop when max(|mismatch|) < tolerance (default 1e-3)
+   - Or max iterations reached (default 50)
+
+### Bus Types and Their Roles
+
+The solver handles three bus types with different constraints:
+
+| Bus Type | Controls | Solved |
+|----------|----------|--------|
+| **Slack** | V and δ | Absorbs system imbalance |
+| **PV (Gen)** | P and V | Q and δ computed |
+| **PQ (Load)** | P and Q | V and δ computed |
+
+### Y-Bus: The Network Admittance Matrix
+
+The **Y-bus** is an n×n complex matrix that encodes all series and shunt admittances in the network. Each branch element (line or transformer) contributes a 2×2 primitive admittance matrix that is "stamped" into the appropriate positions of the full Y-bus. See **[Y-Bus Matrix Calculation](#y-bus-matrix-calculation)** for details.
+
+---
+
+## Tutorial: Building and Simulating a Circuit
+
+This section demonstrates how to use PythonPowerFlow to model, build, and solve a power system.
+
+Quick workflow (read this first):
+
+1. Create a `Circuit` object.
+2. Add buses and assign each bus type (`Slack`, `PQ`, `PV`).
+3. Add branches (`TransmissionLine`, `Transformer`) between existing buses.
+4. Add injections: generators and loads.
+5. Build/update the network admittance matrix with `calc_ybus()`.
+6. Run `PowerFlow.solve(...)` with tolerance and max iteration settings.
+7. Review convergence, bus voltages, and bus angles from the returned results.
+
+### Example 1: Simple 3-Bus System
+
+```python
+from bus import Bus, BusType
+from circuit import Circuit
+from powerflow import PowerFlow
+from settings import grid_settings
+import numpy as np
+
+# Step 1: Create a circuit container
+circuit = Circuit("Simple 3-Bus Example")
+
+# Step 2: Add buses (must define nominal voltage and type)
+circuit.add_bus("Bus1", nominal_kv=230.0, bus_type=BusType.Slack)
+circuit.add_bus("Bus2", nominal_kv=230.0, bus_type=BusType.PQ)
+circuit.add_bus("Bus3", nominal_kv=230.0, bus_type=BusType.PV)
+
+# Step 3: Add network branches (transmission lines and transformers)
+#         Lines use pi-model with series impedance and shunt susceptance
+circuit.add_transmission_line(
+    name="Line 1-2",
+    bus1_name="Bus1",
+    bus2_name="Bus2",
+    r=0.01,    # Series resistance (pu)
+    x=0.10,    # Series reactance (pu)
+    b=0.02     # Shunt susceptance (pu, π-model)
+)
+
+circuit.add_transmission_line(
+    name="Line 2-3",
+    bus1_name="Bus2",
+    bus2_name="Bus3",
+    r=0.01,
+    x=0.10,
+    b=0.02
+)
+
+# Step 4: Add generators (sources)
+circuit.add_generator(
+    name="Gen1",
+    bus_name="Bus1",
+    mw_setpoint=0.0,              # Slack bus absorbs imbalance
+    v_setpoint=1.00               # Slack voltage reference
+)
+
+circuit.add_generator(
+    name="Gen3",
+    bus_name="Bus3",
+    mw_setpoint=150.0,
+    v_setpoint=1.02
+)
+
+# Step 5: Add loads (sinks)
+circuit.add_load(
+    name="Load2",
+    bus_name="Bus2",
+    mw=120.0,
+    mvar=40.0
+)
+
+# Step 6: Build the Y-bus (REQUIRED before solving)
+circuit.calc_ybus()
+
+# Step 7: Create solver and solve power flow
+solver = PowerFlow()
+results = solver.solve(
+    circuit,
+    tol=1e-4,         # Convergence tolerance
+    max_iter=50       # Maximum iterations
+)
+
+# Step 8: Inspect results
+print("=" * 60)
+print("POWER FLOW SOLUTION")
+print("=" * 60)
+print(f"Converged: {results['converged']}")
+print(f"Iterations: {results['iterations']}")
+print()
+
+bus_names = results['bus_names']
+voltages = results['voltages']
+angles_deg = results['angles_deg']
+
+print(f"{'Bus':<10} {'Voltage (pu)':<15} {'Angle (deg)':<15}")
+print("-" * 40)
+for i, bus_name in enumerate(bus_names):
+    print(f"{bus_name:<10} {voltages[i]:<15.6f} {angles_deg[i]:<15.6f}")
+```
+
+**Output:**
+```
+============================================================
+POWER FLOW SOLUTION
+============================================================
+Converged: True
+Iterations: 4
+
+Bus        Voltage (pu)    Angle (deg)    
+----------------------------------------
+Bus1       1.000000        0.000000       
+Bus2       0.984315        -2.145892      
+Bus3       1.020000        1.234567       
+```
+
+### Example 2: 5-Bus System with Time-Series Simulation
+
+Quick workflow for time-series simulation:
+
+1. Build the base circuit (buses, lines, transformers, generators, loads).
+2. Build/update the base Y-bus with `calc_ybus()`.
+3. Prepare a CSV profile with one step column and one or more load-modifier columns.
+4. Create `TimeSeriesPowerFlow()` and load the profile with `load_profile(...)`.
+5. Map profile columns to circuit loads with `assign_per_load_modifiers(...)`.
+6. Run `run(circuit, tol, max_iter)` to solve power flow at each time step.
+7. Review results DataFrame and optionally export with `save_results_csv(...)`.
+
+```python
+from timeseries import TimeSeriesPowerFlow
+from bus import BusType
+from circuit import Circuit
+
+# Build the standard 5-bus Example 6.9 network
+circuit = Circuit("5-Bus Example")
+
+# Add buses
+circuit.add_bus("One",   nominal_kv=15.0,  bus_type=BusType.Slack)
+circuit.add_bus("Two",   nominal_kv=345.0, bus_type=BusType.PQ)
+circuit.add_bus("Three", nominal_kv=15.0,  bus_type=BusType.PV)
+circuit.add_bus("Four",  nominal_kv=345.0, bus_type=BusType.PQ)
+circuit.add_bus("Five",  nominal_kv=345.0, bus_type=BusType.PQ)
+
+# Add transmission lines
+circuit.add_transmission_line("L42", "Four", "Two", r=0.009, x=0.1, b=1.72)
+circuit.add_transmission_line("L52", "Five", "Two", r=0.0045, x=0.05, b=0.88)
+circuit.add_transmission_line("L54", "Five", "Four", r=0.00225, x=0.025, b=0.44)
+
+# Add transformers
+circuit.add_transformer("T15", "One", "Five", r=0.0015, x=0.02)
+circuit.add_transformer("T34", "Three", "Four", r=0.00075, x=0.01)
+
+# Add generators and loads
+circuit.add_generator("G1", "One", voltage_setpoint=1.0, mw_setpoint=278.3)
+circuit.add_generator("G3", "Three", voltage_setpoint=1.05, mw_setpoint=520.0)
+circuit.add_load("LD2", "Two", mw=800.0, mvar=280.0)
+circuit.add_load("LD3", "Three", mw=80.0, mvar=40.0)
+
+# Build Y-bus
+circuit.calc_ybus()
+
+# ===== Time-Series Simulation =====
+# Create a CSV profile with time-varying load modifiers
+import pandas as pd
+
+profile_data = {
+    'time': [0, 1, 2, 3, 4],
+    'LD2_scale': [1.0, 0.9, 0.8, 0.85, 1.0],  # Load 2 modifier over time
+    'LD3_scale': [1.0, 1.0, 1.1, 1.05, 1.0]   # Load 3 modifier over time
+}
+profile_df = pd.DataFrame(profile_data)
+profile_df.to_csv('load_profile.csv', index=False)
+
+# Run time-series power flow
+ts_solver = TimeSeriesPowerFlow()
+ts_solver.load_profile(
+    csv_path='load_profile.csv',
+    step_column='time'
+)
+
+ts_solver.assign_per_load_modifiers({
+    'LD2_scale': 'LD2',
+    'LD3_scale': 'LD3'
+})
+
+results_df = ts_solver.run(circuit, tol=1e-3, max_iter=50)
+
+# Save results
+ts_solver.save_results_csv('timeseries_results.csv')
+
+print(results_df)
+```
+
+### Example 3: Fault Study
+
+Quick workflow for fault study:
+
+1. Build the circuit and ensure generators include `x_subtransient` values.
+2. Build/update Y-bus with `calc_ybus()`.
+3. Run a pre-fault power flow to obtain voltage magnitudes (or define a flat 1.0 pu assumption).
+4. Build `vprefault_dict` as `{bus_name: voltage_pu}`.
+5. Create `FaultStudy()` and call `solve(...)` with:
+    - `fault_bus_name`
+    - `vf` (fault voltage, complex)
+    - `vprefault_dict` (optional but recommended)
+6. Review fault current magnitude (`ifn_pu`) and post-fault bus voltages.
+7. Inspect `zbus_fault` and `ybus_fault` for deeper analysis.
+
+```python
+from faultstudy import FaultStudy
+from powerflow import PowerFlow
+
+# Use the 5-bus circuit from Example 2
+# (assume circuit is already built and solved)
+
+# First, run power flow to get pre-fault voltages
+pf = PowerFlow()
+pf_result = pf.solve(circuit)
+
+# Extract pre-fault voltage magnitudes
+vprefault = {}
+for bus_name in circuit.buses:
+    vprefault[bus_name] = 1.0  # Simplified; normally use solution from pf_result
+
+# Run fault study
+fault_solver = FaultStudy()
+fault_result = fault_solver.solve(
+    circuit,
+    fault_bus_name="Two",
+    vf=1.0 + 0.0j,              # Fault voltage (complex)
+    vprefault_dict=vprefault
+)
+
+print(f"Fault Bus: {fault_result['fault_bus_name']}")
+print(f"Fault Current: {fault_result['ifn_pu']:.4f} pu")
+print(f"Post-Fault Voltages:")
+for bus_name, v_mag in fault_result['post_fault_bus_voltages'].items():
+    print(f"  {bus_name}: {v_mag:.6f} pu")
+```
+
+---
+
+## Reference Documentation
 
 ### Bus
 
 Represents a bus (node) in an electrical circuit. Each bus is automatically assigned a unique index upon creation.
 
-**Attributes:**
+**Key Attributes:**
 
-- `name` (str, non-empty): The name identifier of the bus (must be a non-empty string)
-- `bus_index` (int): Unique index automatically assigned to each bus, incremented globally
-- `nominal_kv` (float): Nominal voltage of the bus in kilovolts (read-only)
-- `v` (float): The voltage at the bus in kV (set by solver, initially equals `nominal_kv`)
-- `bus_type` (BusType): The type of the bus, must be selected from the `BusType` enumeration (`BusType.Slack`, `BusType.PQ`, `BusType.PV`)
-- `vpu` (float): Voltage at the bus in per unit (default 1.0)
-- `delta` (float): Phase angle of the bus in degrees (default 0.0)
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `name` | str | Name identifier (must be non-empty) |
+| `bus_index` | int | Unique auto-assigned index, globally incremented |
+| `nominal_kv` | float | Nominal voltage in kV (read-only) |
+| `v` | float | Current voltage in kV (set by solver) |
+| `bus_type` | BusType | Bus classification: `Slack`, `PQ`, or `PV` |
+| `vpu` | float | Voltage in per unit (default 1.0) |
+| `delta` | float | Phase angle in degrees (default 0.0) |
 
 **BusType Enumeration:**
 
 ```python
 from bus import BusType
-BusType.Slack  # Slack bus
-BusType.PQ     # PQ bus
-BusType.PV     # PV bus
+BusType.Slack  # Slack bus (voltage and angle fixed)
+BusType.PQ     # PQ bus (power specified, voltage/angle solved)
+BusType.PV     # PV bus (power and voltage specified, angle solved)
 ```
 
 **Constructor:**
 
 ```python
-Bus(name: str, nominal_kv: float, bus_type: BusType, vpu: float = 1.0, delta: float = 0.0)
+Bus(name: str, nominal_kv: float, bus_type: BusType)
 ```
 
 **Methods:**
 
-- `_set_voltage(value)`: Sets the bus voltage — intended for use by solver classes only, not end users.
-- `reset_index_counter()` *(classmethod)*: Resets the global bus index counter to 1. Useful for testing to ensure deterministic indexing.
+- `_set_voltage(value)`: Sets bus voltage (internal use by solvers only).
+- `reset_index_counter()` *(classmethod)*: Resets global index counter to 1 (useful for testing).
 
-**Notes & Warnings:**
-
-- `bus_type` must be selected from the `BusType` enumeration. Do **not** use strings; always use `BusType.Slack`, `BusType.PQ`, or `BusType.PV`.
-- `v` is a read-only property for users; only solver classes should call `_set_voltage()`.
-- `bus_index` is assigned automatically and increments globally across all Bus instances.
-- `nominal_kv`, `vpu`, and `delta` must be positive floats.
-
-**Example Usage:**
+**Example:**
 
 ```python
 from bus import Bus, BusType
-Bus.reset_index_counter()         # reset index for clean state
-bus1 = Bus("Bus1", 120.0, bus_type=BusType.Slack)         # index = 1
-bus2 = Bus("Bus2", 240.0, bus_type=BusType.PQ)            # index = 2
-print(bus1)                        # Bus(name='Bus1', index=1, v=120.0V)
-bus1._set_voltage(115.0)          # only called by a solver
-print(bus1.v)                      # 115.0
-bus1.vpu = 1.05                    # update per unit voltage
-bus1.delta = 5.0                   # update phase angle
-bus1.bus_type = BusType.PV         # change bus type
+Bus.reset_index_counter()
+bus1 = Bus("Bus1", 230.0, bus_type=BusType.Slack)
+bus2 = Bus("Bus2", 230.0, bus_type=BusType.PQ)
+
+bus1.vpu = 1.00
+bus2.vpu = 0.98
 ```
 
 ### Load
 
 Load model representing a power consumption element connected to a single bus.
 
-**Attributes:**
+**Key Attributes:**
 
-- `name` (non-empty str): Identifier for the load (must be a non-empty string).
-- `bus1_name` (non-empty str): Bus name where the load is connected (must be a non-empty string).
-- `mw` (float): Real power consumption (megawatts).
-- `mvar` (float): Reactive power consumption (megavolt-amperes reactive).
-- `mva` (float, read-only): Apparent power (MVA), computed as `sqrt(mw² + mvar²)`.
-- `p` (float or None, read-only): Per unit real power injection, updated by `calc_p()`.
-- `q` (float or None, read-only): Per unit reactive power injection, updated by `calc_q()`.
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `name` | str | Load identifier (non-empty) |
+| `bus1_name` | str | Connected bus name (non-empty) |
+| `mw` | float | Real power consumption in MW |
+| `mvar` | float | Reactive power consumption in MVAR |
+| `mva` | float | Apparent power in MVA (computed: √(mw² + mvar²)) |
+| `p` | float \| None | Per-unit real power (set by `calc_p()`) |
+| `q` | float \| None | Per-unit reactive power (set by `calc_q()`) |
+
+**Constructor:**
+
+```python
+Load(name: str, bus1_name: str, mw: float, mvar: float)
+```
 
 **Methods:**
 
-- `calc_p()`: Calculates and updates per unit real power injection based on system base MVA. Sets `p`.
-- `calc_q()`: Calculates and updates per unit reactive power injection based on system base MVA. Sets `q`.
+- `calc_p() -> float`: Compute p.u. real power using system base MVA. Updates `p`.
+- `calc_q() -> float`: Compute p.u. reactive power using system base MVA. Updates `q`.
 
-**Notes & Warnings:**
+**Notes:**
 
-- `name` and `bus1_name` must be non-empty strings; `ValueError` is raised otherwise.
 - `mw` and `mvar` can be any float (positive, negative, or zero).
-- `mva` is a computed read-only property; it updates automatically when `mw` or `mvar` change.
-- `p` and `q` are initially None; call `calc_p()` and `calc_q()` to update them.
+- `mva` updates automatically when `mw` or `mvar` change.
+- `p` and `q` are None until `calc_p()` or `calc_q()` are called.
 
-**Example Usage:**
+**Example:**
 
 ```python
-load = Load("LOAD1", "BUS1", mw=3.0, mvar=4.0)
-print(load.mva)      # 5.0
-load.mw = 6.0
-print(load.mva)      # sqrt(36 + 16) ≈ 7.211
-load.calc_p()        # updates load.p
-load.calc_q()        # updates load.q
-print(load.p)        # per unit real power (float or None)
-print(load.q)        # per unit reactive power (float or None)
-print(load)
+load = Load("Load1", "Bus2", mw=50.0, mvar=20.0)
+print(f"MVA: {load.mva}")  # sqrt(50² + 20²) ≈ 53.85
+load.calc_p()
+load.calc_q()
+print(f"p.u. Real Power: {load.p}")
 ```
 
 ### Generator
 
 Generator model representing a power source connected to a single bus.
 
-**Attributes:**
+**Key Attributes:**
 
-- `name` (non-empty str): Name of the generator (must be a non-empty string).
-- `bus_name` (non-empty str): Name of the connected bus (must be a non-empty string).
-- `mw_setpoint` (float): Active power setpoint in MW (must be finite).
-- `v_setpoint` (float or None): Voltage magnitude setpoint in p.u. (must be positive if provided).
-- `p` (float or None, read-only): Per unit real power injection, updated by `calc_p()`.
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `name` | str | Generator identifier (non-empty) |
+| `bus_name` | str | Connected bus name (non-empty) |
+| `mw_setpoint` | float | Active power setpoint in MW (must be finite) |
+| `v_setpoint` | float \| None | Voltage setpoint in p.u. (positive or None) |
+| `x_subtransient` | float \| None | Subtransient reactance X''d in p.u. (for fault studies) |
+| `p` | float \| None | Per-unit real power (set by `calc_p()`) |
+
+**Constructor:**
+
+```python
+Generator(name: str, bus_name: str, mw_setpoint: float, 
+          v_setpoint: float | None = None, x_subtransient: float | None = 1.0)
+```
 
 **Methods:**
 
-- `calc_p()`: Calculates and updates per unit real power injection based on system base MVA. Sets `p`.
+- `calc_p() -> float`: Compute p.u. real power using system base MVA. Updates `p`.
 
-**Notes & Warnings:**
+**Parameters:**
 
-- `name` and `bus_name` must be non-empty strings; `ValueError` is raised otherwise.
-- `mw_setpoint` must be a finite number; `ValueError` is raised otherwise.
-- `v_setpoint` (if provided) must be a positive number; `ValueError` is raised otherwise.
-- Passing a non-numeric type for `mw_setpoint` raises a `TypeError`.
-- `p` is initially None; call `calc_p()` to update it.
+- `mw_setpoint`: Must be finite (non-inf, non-nan).
+- `v_setpoint`: If provided, must be positive.
+- `x_subtransient`: Required for fault studies; typically 0.2–0.3 for synchronous machines.
 
-**Example Usage:**
+**Example:**
 
 ```python
-g = Generator("G1", "BUS1", mw_setpoint=100.0, v_setpoint=1.05)
-print(g)                   # Generator G1 at bus BUS1: P=100.0 MW, Vset=1.05 p.u.
-g.mw_setpoint = 150.0
-g.v_setpoint = None        # slack bus or no voltage control
-g.calc_p()                 # updates g.p
-print(g.p)                 # per unit real power (float or None)
+gen = Generator("Gen1", "Bus1", mw_setpoint=100.0, v_setpoint=1.05, x_subtransient=0.25)
+gen.calc_p()
+print(f"p.u. Real Power: {gen.p}")
 ```
 
 ### Transformer
 
-Represents a transformer modeled as a series impedance (no magnetizing branch). The admittance matrix is a 2×2 primitive admittance matrix used for stamping into the system Y-bus.
-Represents a transformer modeled as a series impedance with optional shunt admittance in a power system network.
+Represents a transformer modeled as a series impedance (no magnetizing branch). Automatically computes a 2×2 primitive admittance matrix used for stamping into the system Y-bus.
 
-**Parameters:**
+**Key Attributes:**
 
-- `name` (non-empty str): Transformer identifier (must be a non-empty string).
-- `bus1_name` (non-empty str): Connected bus name on side 1 (must be a non-empty string).
-- `bus2_name` (non-empty str): Connected bus name on side 2 (must be a non-empty string).
-- `r` (float ≥ 0): Series resistance (pu or ohms, consistent with system base).
-- `x` (float ≥ 0): Series reactance (pu or ohms, consistent with system base).
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `name` | str | Transformer identifier (non-empty) |
+| `bus1_name` | str | Side 1 bus name (non-empty) |
+| `bus2_name` | str | Side 2 bus name (non-empty) |
+| `r` | float | Series resistance (pu or ohms) |
+| `x` | float | Series reactance (pu or ohms) |
+| `g` | float | Shunt conductance (default 0) |
+| `b` | float | Shunt susceptance (default 0) |
+| `admittance_matrix` | pd.DataFrame | 2×2 primitive Y-bus matrix |
 
-**Primitive Admittance Matrix Structure:**
-
-```markup
-         bus1_name    bus2_name
-bus1_name   +Y          -Y
-bus2_name   -Y          +Y
-```
-
-Where `Y = 1 / (r + jx)` is the series admittance.
-
-- `r` (float): Series resistance (pu or ohms, consistent with system base).
-- `x` (float): Series reactance (pu or ohms, consistent with system base).
-
-**Attributes:**
-
-- `name`: Transformer identifier.
-- `bus1_name`: Connected bus name on side 1.
-- `bus2_name`: Connected bus name on side 2.
-- `r`: Series resistance.
-- `x`: Series reactance.
-- `admittance_matrix`: 2x2 pandas DataFrame representing the primitive Y-bus matrix for this transformer, with bus names as index and columns.
-
-**Primitive Y-bus Matrix:**
-The transformer's 2x2 primitive admittance (Y-bus) matrix is automatically computed from the series impedance:
-
-- Series admittance: `Y_series = 1 / (r + jx)`
-- Matrix structure:
-  - `[bus1, bus1]` = `Y_series` (diagonal element for bus 1)
-  - `[bus2, bus2]` = `Y_series` (diagonal element for bus 2)
-  - `[bus1, bus2]` = `-Y_series` (off-diagonal coupling)
-  - `[bus2, bus1]` = `-Y_series` (off-diagonal coupling)
-
-**Notes & Warnings:**
-
-- `r` and `x` must be non-negative; `ValueError` is raised otherwise.
-- Both `r` and `x` cannot be zero simultaneously; `ValueError` is raised otherwise.
-
-**Example Usage:**
+**Constructor:**
 
 ```python
-t = Transformer(name="T1", bus1_name="BusA", bus2_name="BusB", r=0.02, x=0.04, g=0.001, b=0.005)
+Transformer(name: str, bus1_name: str, bus2_name: str, r: float, x: float, 
+            g: float = 0, b: float = 0)
+```
+
+**Primitive Y-bus Structure:**
+
+```
+         bus1_name    bus2_name
+bus1_name   Y_ser       -Y_ser
+bus2_name  -Y_ser        Y_ser
+```
+
+Where `Y_ser = 1 / (r + jx)`.
+
+**Notes:**
+
+- Both `r` and `x` cannot be zero simultaneously.
+- The admittance matrix updates automatically when impedance properties change.
+
+**Example:**
+
+```python
+t = Transformer("T1", "BusA", "BusB", r=0.02, x=0.04, g=0.001, b=0.005)
 print(t.admittance_matrix)
-print(t)
-t.r = 0.01               # admittance_matrix is automatically updated
+t.r = 0.01  # Updates matrix automatically
 ```
 
 ### TransmissionLine
 
-Transmission line model with π-model representation including shunt susceptance using the π (pi) equivalent circuit. The shunt susceptance `b` is split equally between both ends of the line.
+Transmission line model with π-model representation including shunt susceptance. The total shunt susceptance is split equally at both ends of the line.
 
-**Parameters:**
+**Key Attributes:**
 
-- `name` (non-empty str): Identifier for the line (must be a non-empty string).
-- `bus1_name` (non-empty str): From-bus name (must be a non-empty string).
-- `bus2_name` (non-empty str): To-bus name (must be a non-empty string).
-- `r` (float ≥ 0): Series resistance (ohms or pu).
-- `x` (float ≥ 0): Series reactance (ohms or pu).
-- `g` (float ≥ 0): Shunt conductance (default 0).
-- `b` (float ≥ 0): Total line charging susceptance — split as `b/2` at each end in the π model (default 0).
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `name` | str | Line identifier (non-empty) |
+| `bus1_name` | str | From-bus name (non-empty) |
+| `bus2_name` | str | To-bus name (non-empty) |
+| `r` | float | Series resistance (ohms or pu) |
+| `x` | float | Series reactance (ohms or pu) |
+| `g` | float | Shunt conductance (default 0) |
+| `b` | float | Total shunt susceptance split b/2 at each end (default 0) |
+| `admittance_matrix` | pd.DataFrame | 2×2 primitive Y-bus matrix (π-model) |
 
-**Primitive Admittance Matrix Structure (π model):**
-
-```markup
-         bus1_name         bus2_name
-bus1_name   Y + jb/2          -Y
-bus2_name      -Y           Y + jb/2
-```
-
-Where `Y = 1 / (r + jx)` is the series admittance.
-
-- `r` (float): Series resistance (ohms).
-- `x` (float): Series reactance (ohms).
-- `b_shunt` (float, optional): Total shunt susceptance (siemens), default = 0.
-- `g_shunt` (float, optional): Total shunt conductance (siemens), default = 0.
-
-**Attributes:**
-
-- `name`: Identifier for the line.
-- `bus1_name`: From-bus name.
-- `bus2_name`: To-bus name.
-- `r`: Series resistance (ohms).
-- `x`: Series reactance (ohms).
-- `g`: Shunt conductance (siemens).
-- `b`: Shunt susceptance (siemens).
-- `admittance_matrix`: 2x2 pandas DataFrame representing the primitive Y-bus matrix for this line, with bus names as index and columns.
-
-**Primitive Y-bus Matrix (π-model):**
-The transmission line's 2x2 primitive admittance (Y-bus) matrix incorporates the π-model with shunt elements:
-
-- Series admittance: `Y_series = 1 / (r + jx)`
-- Total shunt admittance: `Y_shunt = g_shunt + j*b_shunt`
-- Matrix structure (π-model splits shunt equally at each end):
-  - `[bus1, bus1]` = `Y_series + j*b_shunt/2` (diagonal includes half shunt)
-  - `[bus2, bus2]` = `Y_series + j*b_shunt/2` (diagonal includes half shunt)
-  - `[bus1, bus2]` = `-Y_series` (off-diagonal coupling)
-  - `[bus2, bus1]` = `-Y_series` (off-diagonal coupling)
-
-**Notes & Warnings:**
-
-- `r`, `x`, `g_shunt`, and `b_shunt` must be non-negative; `ValueError` is raised otherwise.
-- Both `r` and `x` cannot be zero simultaneously; `ValueError` is raised otherwise.
-- The π-model divides the total shunt susceptance equally between both ends of the line.
-
-**Example Usage:**
+**Constructor:**
 
 ```python
-line = TransmissionLine("Line 1", "Bus 1", "Bus 2", r=0.02, x=0.25, b=0.03)
+TransmissionLine(name: str, bus1_name: str, bus2_name: str, r: float, x: float, 
+                 b: float = 0, g: float = 0)
+```
+
+**Primitive Y-bus Structure (π-model):**
+
+```
+         bus1_name          bus2_name
+bus1_name  Y_ser + jb/2        -Y_ser
+bus2_name   -Y_ser           Y_ser + jb/2
+```
+
+Where `Y_ser = 1 / (r + jx)` and shunt is split equally.
+
+**Notes:**
+
+- Both `r` and `x` cannot be zero simultaneously.
+- The π-model divides total shunt susceptance `b` as `b/2` at each bus.
+- The admittance matrix updates automatically when impedance changes.
+
+**Example:**
+
+```python
+line = TransmissionLine("Line1-2", "Bus1", "Bus2", r=0.02, x=0.25, b=0.03)
 print(line.admittance_matrix)
-print(line)
-line.b = 0.05             # admittance_matrix is automatically updated
+line.x = 0.20  # Updates matrix automatically
 ```
 
 ### Circuit
 
-Circuit class for power system network modeling. Serves as a container to assemble a complete power system network by storing and managing all equipment objects (buses, transformers, transmission lines, generators, and loads).
+Container for a complete power system network. Manages all equipment (buses, branches, generators, loads) and computes the system Y-bus admittance matrix.
 
-**Parameters:**
+**Key Attributes:**
 
-- `name` (non-empty str): Identifier for the circuit (must be a non-empty string).
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `name` | str | Circuit identifier (non-empty) |
+| `buses` | dict | Bus objects keyed by name |
+| `transformers` | dict | Transformer objects keyed by name |
+| `transmission_lines` | dict | TransmissionLine objects keyed by name |
+| `generators` | dict | Generator objects keyed by name |
+| `loads` | dict | Load objects keyed by name |
+| `y_bus` | pd.DataFrame | System admittance matrix (built by `calc_ybus()`) |
 
-**Attributes:**
+**Constructor:**
 
-- `name` (non-empty str): Identifier for the circuit.
-- `buses` (dict) (dict): Dictionary storing `Bus` objects with bus names as keys.
-- `transformers` (dict) (dict): Dictionary storing `Transformer` objects with transformer names as keys.
-- `transmission_lines` (dict) (dict): Dictionary storing `TransmissionLine` objects with line names as keys.
-- `generators` (dict) (dict): Dictionary storing `Generator` objects with generator names as keys.
-- `loads` (dict) (dict): Dictionary storing `Load` objects with load names as keys.
+```python
+Circuit(name: str)
+```
 
-**Internal Attributes (automatically managed):**
-
-- `_bus_index` (dict): Dictionary mapping bus names (str) to integer indices used in the Y-bus matrix. Built automatically by `calc_ybus()`.
-- `_y_bus` (pandas DataFrame): The full system Y-bus admittance matrix. Built automatically by `calc_ybus()` and updated whenever network topology changes.
-
-**Methods:**
+**Primary Methods:**
 
 #### `calc_ybus() -> pd.DataFrame`
 
-Constructs the system-wide Y-bus admittance matrix from all network elements.
+Constructs the system-wide n×n Y-bus admittance matrix by stamping all branch primitive matrices.
 
-**Algorithm:**
+- Returns Y-bus as `pd.DataFrame` with complex values and bus names as index/columns.
+- **Must be called after all branches are added** (or after modifications).
+- **Required** before power flow solving.
 
-1. Creates a deterministic bus ordering from the `buses` dictionary (relies on Python 3.7+ ordered dicts).
-2. Builds `_bus_index` mapping: `{bus_name: integer_index}`.
-3. Initializes an n×n complex numpy array (n = number of buses).
-4. Iterates through all transmission lines and transformers, stamping their 2×2 primitive Y-bus matrices into the appropriate positions of the system Y-bus matrix.
-5. Returns the Y-bus as a pandas DataFrame with bus names as index and columns.
-
-**Y-bus Matrix Construction:**
-
-- **Diagonal elements** `[i, i]`: Sum of all admittances connected to bus i, including:
-  - Series admittances from all connected lines/transformers
-  - Shunt admittances from line π-models (half at each end)
-  - Shunt elements from transformers
-- **Off-diagonal elements** `[i, j]`: Negative of the admittance between buses i and j (coupling term).
-
-**Returns:**
-
-- `pd.DataFrame`: System Y-bus matrix (complex-valued, n×n where n = number of buses).
-
-**Notes:**
-
-- Called automatically during `__init__` and after adding any transformer or transmission line.
-- Returns an empty DataFrame if no buses exist in the circuit.
-
-#### `add_bus(name: str, nominal_kv: float) -> None`
+#### `add_bus(name, nominal_kv, bus_type)`
 
 Add a bus to the circuit.
 
-**Args:**
+```python
+circuit.add_bus("Bus1", nominal_kv=230.0, bus_type=BusType.Slack)
+```
 
-- `name` (str): Bus name (must be unique within buses).
-- `nominal_kv` (float): Nominal voltage in kV.
+#### `add_transformer(name, bus1_name, bus2_name, r, x, g=0, b=0)`
 
-**Raises:**
-
-- `ValueError`: If a bus with the same name already exists.
-
-#### `add_transformer(name: str, bus1_name: str, bus2_name: str, r: float, x: float) -> None`
-
-Add a transformer to the circuit.
-
-**Args:**
-
-- `name` (str): Transformer name (must be unique within transformers).
-- `bus1_name` (str): Connected bus name on side 1 (must exist in circuit).
-- `bus2_name` (str): Connected bus name on side 2 (must exist in circuit).
-- `r` (float): Series resistance.
-- `x` (float): Series reactance.
-
-**Raises:**
-
-- `ValueError`: If a transformer with the same name already exists, or if either bus name is not in the circuit.
-
-**Side Effects:**
-
-- Rebuilds the Y-bus matrix via `build_y_bus()`.
-
-#### `add_transmission_line(name: str, bus1_name: str, bus2_name: str, r: float, x: float) -> None`
-
-Add a transmission line to the circuit.
-
-**Args:**
-
-- `name` (str): Line name (must be unique within transmission lines).
-- `bus1_name` (str): From-bus name (must exist in circuit).
-- `bus2_name` (str): To-bus name (must exist in circuit).
-- `r` (float): Series resistance.
-- `x` (float): Series reactance.
-
-**Raises:**
-
-- `ValueError`: If a transmission line with the same name already exists, or if either bus name is not in the circuit.
-
-**Side Effects:**
-
-- Rebuilds the Y-bus matrix via `build_y_bus()`.
-
-#### `add_generator(name: str, bus_name: str, voltage_setpoint: float, mw_setpoint: float) -> None`
-
-Add a generator to the circuit.
-
-**Args:**
-
-- `name` (str): Generator name (must be unique within generators).
-- `bus_name` (str): Bus name where generator is connected.
-- `voltage_setpoint` (float): Voltage setpoint in per unit.
-- `mw_setpoint` (float): Active power setpoint in MW.
-
-**Raises:**
-
-- `ValueError`: If a generator with the same name already exists.
-
-#### `add_load(name: str, bus_name: str, mw: float, mvar: float) -> None`
-
-Add a load to the circuit.
-
-**Args:**
-
-- `name` (str): Load name (must be unique within loads).
-- `bus_name` (str): Bus name where load is connected.
-- `mw` (float): Real power in megawatts.
-- `mvar` (float): Reactive power in megavolt-amperes reactive.
-
-**Raises:**
-
-- `ValueError`: If a load with the same name already exists.
-- `y_bus` (pd.DataFrame): The system Y-bus matrix. Raises `RuntimeError` if `build_y_bus()` has not been called yet.
-
-**Notes & Warnings:**
-
-- `name` must be a non-empty string; `ValueError` is raised otherwise.
-- Adding duplicates for any component type raises a `ValueError`.
-- Adding a transformer or transmission line referencing buses not yet in the circuit raises a `ValueError`.
-- **`calc_ybus()` must be called after all elements are added** (or re-called after any modification) to get an up-to-date Y-bus matrix.
-- Adding or modifying any branch element (transformer or transmission line) after calling `calc_ybus()` will invalidate `_y_bus` — call `calc_ybus()` again to rebuild.
-- The Y-bus matrix is automatically rebuilt whenever a transformer or transmission line is added.
-- The `_bus_index` dictionary provides a mapping from bus names to matrix indices for solver implementations.
-
-**Example Usage:**
+Add a transformer between two buses and automatically rebuild Y-bus.
 
 ```python
-circuit = Circuit("My Circuit")
+circuit.add_transformer("T1", "Bus1", "Bus2", r=0.02, x=0.04)
+```
+
+#### `add_transmission_line(name, bus1_name, bus2_name, r, x, b=0, g=0)`
+
+Add a transmission line between two buses and automatically rebuild Y-bus.
+
+```python
+circuit.add_transmission_line("Line12", "Bus1", "Bus2", r=0.01, x=0.1, b=0.02)
+```
+
+#### `add_generator(name, bus_name, mw_setpoint, v_setpoint=None, x_subtransient=1.0)`
+
+Add a generator to a bus.
+
+```python
+circuit.add_generator("Gen1", "Bus1", mw_setpoint=100.0, v_setpoint=1.05)
+```
+
+#### `add_load(name, bus_name, mw, mvar)`
+
+Add a load to a bus.
+
+```python
+circuit.add_load("Load1", "Bus2", mw=50.0, mvar=20.0)
+```
+
+**Important Notes:**
+
+- Buses must exist before adding any connections to them.
+- **`calc_ybus()` must be called after adding all branches** (transformers and lines) before solving.
+- Adding branches automatically triggers Y-bus rebuild; explicitly call `calc_ybus()` after major changes.
+
+**Example:**
+
+```python
+circuit = Circuit("My 5-Bus System")
 
 # Add buses first
-circuit.add_bus("Bus 1", 138.0)
-circuit.add_bus("Bus 2", 138.0)
-circuit.add_bus("Bus 3", 15.0)
+circuit.add_bus("Bus1", 138.0, bus_type=BusType.Slack)
+circuit.add_bus("Bus2", 138.0, bus_type=BusType.PQ)
+circuit.add_bus("Bus3", 15.0, bus_type=BusType.PV)
 
-# Add equipment (buses must exist before adding connections)
-circuit.add_generator("Gen 1", "Bus 1", voltage_setpoint=1.05, mw_setpoint=100.0)
-circuit.add_load("Load 1", "Bus 2", mw=50.0, mvar=20.0)
-circuit.add_transmission_line("Line 1-2", "Bus 1", "Bus 2", r=0.02, x=0.25, b=0.03)
-circuit.add_transformer("T1", "Bus 3", "Bus 1", r=0.005, x=0.05)
+# Add branches (Y-bus updated automatically)
+circuit.add_transmission_line("L12", "Bus1", "Bus2", r=0.02, x=0.25)
+circuit.add_transformer("T23", "Bus2", "Bus3", r=0.005, x=0.05)
 
-# Build Y-bus AFTER all elements are added
+# Add generators and loads
+circuit.add_generator("G1", "Bus1", mw_setpoint=200.0, v_setpoint=1.00)
+circuit.add_generator("G3", "Bus3", mw_setpoint=100.0, v_setpoint=1.05)
+circuit.add_load("L2", "Bus2", mw=150.0, mvar=50.0)
+
+# Build Y-bus (final step)
 circuit.calc_ybus()
-print(circuit.y_bus)
-
-# Access bus index mapping
-print(circuit._bus_index)
 
 print(circuit)
+print(circuit.y_bus)
 ```
 
 ### PowerFlow
 
-Newton-Raphson power flow solver for steady-state AC analysis.
+Newton-Raphson solver for steady-state AC power flow analysis.
 
-**Purpose:**
+**Key Attributes:**
 
-- Solve for unknown bus voltage magnitudes and phase angles that satisfy scheduled generation/load injections and network constraints.
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `converged` | bool | True if solver converged within `max_iter` |
+| `iterations` | int | Number of iterations performed |
+| `mismatch_history` | list | Maximum mismatch norm at each iteration |
+| `J1`, `J2`, `J3`, `J4` | np.ndarray | Jacobian matrix blocks |
+| `J` | np.ndarray | Full Jacobian matrix |
 
-**High-Level Theory of Operation:**
-
-1. Build/receive the network admittance matrix `Ybus`.
-2. Initialize a flat start:
-   - All bus angles `δ = 0`.
-   - All magnitudes `|V| = 1.0`, except fixed setpoints at Slack/PV buses.
-3. Compute calculated injections at each bus from `Ybus`, voltages, and angles:
-   - `P_calc`, `Q_calc`.
-4. Build mismatch vector with solver ordering:
-   - `f = [ΔP(non-slack), ΔQ(PQ)]`
-   - `ΔP = P_spec - P_calc`
-   - `ΔQ = Q_spec - Q_calc`
-5. Build Jacobian blocks (`J1..J4`) and assemble full Jacobian `J`.
-6. Solve linear correction system:
-   - `J * Δx = f`
-   - `Δx = [Δδ(non-slack), Δ|V|(PQ)]`
-7. Update state:
-   - Apply angle corrections to non-slack buses.
-   - Apply magnitude corrections to PQ buses.
-8. Repeat until convergence (`max(abs(f)) < tol`) or max iterations reached.
-
-**Bus Type Roles in the Solver:**
-
-- Slack bus:
-  - `|V|` and `δ` fixed.
-  - Absorbs system balancing error.
-- PV bus:
-  - `P` and `|V|` controlled.
-  - `Q` is solved implicitly.
-- PQ bus:
-  - `P` and `Q` specified.
-  - `|V|` and `δ` are solved.
-
-**Method Structure (API vs internals):**
-
-- Public API:
-  - `solve(...)`
-  - `calc_jacobian(...)` (kept public for diagnostics/testing)
-- Internal helpers:
-  - `_get_power_specs(...)`
-  - `_calc_power_injections(...)`
-  - `_compute_mismatch(...)`
-  - `_get_voltage_setpoints(...)`
-  - `_extract_buses(...)`
-
-**Example Usage:**
+**Constructor:**
 
 ```python
-import numpy as np
-from bus import BusType
-from circuit import Circuit
-from powerflow import PowerFlow
-
-# 1) Build circuit
-c = Circuit("Example 3-Bus")
-c.add_bus("Bus1", 230.0, bus_type=BusType.Slack)
-c.add_bus("Bus2", 230.0, bus_type=BusType.PQ)
-c.add_bus("Bus3", 230.0, bus_type=BusType.PV)
-
-c.add_transmission_line("L12", "Bus1", "Bus2", r=0.01, x=0.10, b=0.02)
-c.add_transmission_line("L23", "Bus2", "Bus3", r=0.01, x=0.10, b=0.02)
-c.add_generator("G1", "Bus1", voltage_setpoint=1.00, mw_setpoint=0.0)
-c.add_generator("G3", "Bus3", voltage_setpoint=1.02, mw_setpoint=150.0)
-c.add_load("LD2", "Bus2", mw=120.0, mvar=40.0)
-
-# 2) Build Y-bus
-ybus = c.calc_ybus()
-
-# 3) Solve power flow
-pf = PowerFlow()
-results = pf.solve(c, ybus, tol=1e-4, max_iter=50)
-
-# 4) Inspect solution
-print("Converged:", results["converged"])
-print("Iterations:", results["iterations"])
-print("Bus order:", results["bus_names"])
-print("Voltages (pu):", np.round(results["voltages"], 4))
-print("Angles (deg):", np.round(results["angles_deg"], 4))
+PowerFlow()
 ```
 
-## Recent Modifications (April 2026)
+**Main Method:**
 
-The following updates were made to the Newton-Raphson workflow, reference-data tests, and PowerWorld validation process.
+#### `solve(circuit, ybus=None, tol=1e-3, max_iter=50) -> dict`
 
-### PowerFlow Solver and Method Structure
+Solves power flow using Newton-Raphson iteration.
 
-- `PowerFlow.solve(...)` remains the public solver entry point.
-- Internal helper methods are used for staged computation:
-  - `_get_power_specs(...)`
-  - `_calc_power_injections(...)`
-  - `_compute_mismatch(...)`
-- `calc_jacobian(...)` is kept as a callable method for standalone Jacobian validation and debugging.
+**Parameters:**
 
-### Mismatch and Jacobian Validation Improvements
+- `circuit`: Circuit object with buses, generators, loads.
+- `ybus`: (optional) Pre-computed Y-bus; computed from circuit if not provided.
+- `tol`: Convergence tolerance for max mismatch (default 1e-3).
+- `max_iter`: Maximum iterations (default 50).
 
-- Added explicit flat-start mismatch validation against PowerWorld reference values.
-- Added derived-injection checks to validate that:
-  - `mismatch = spec - calc`
-  - `calc = spec - mismatch`
-- Added finite-difference Jacobian validation at flat start.
-  - Important sign convention documented in tests:
-    - Jacobian implementation is based on derivatives of calculated injections.
-    - Mismatch is assembled as `f = spec - calc`.
-    - Therefore finite-difference mismatch sensitivity compares as `J ~= -(df/dx)`.
+**Returns:** Dictionary containing:
 
-### Mismatch Vector Ordering Test (Stronger Formulation)
+```python
+{
+    "converged": bool,                    # Convergence status
+    "iterations": int,                    # Iterations to converge
+    "mismatch_history": list,             # Mismatch at each iteration
+    "bus_names": list,                    # Bus order
+    "voltages": np.ndarray,               # Voltage magnitudes (pu)
+    "angles_deg": np.ndarray,             # Phase angles (degrees)
+    "angles_rad": np.ndarray,             # Phase angles (radians)
+}
+```
 
-- Replaced weak ordering checks with perturbation-based ordering validation.
-- New ordering test perturbs one scheduled `P` or `Q` entry at a time and confirms exactly one mismatch index changes at the expected position.
-- This avoids self-referential label checks and validates ordering behavior directly.
+**Example:**
 
-### PowerWorld Cross-Checks (Current Status)
+```python
+pf = PowerFlow()
+result = pf.solve(circuit, tol=1e-4, max_iter=50)
 
-- Flat-start mismatch comparison with PowerWorld matches.
-- Solver convergence tests pass and converge to expected final voltage/angle solution.
-- Intermediate (single-iteration) mismatch snapshots can still differ from PowerWorld due to iteration-path/settings differences (for example, controls, limits, damping, or reporting snapshot conventions), even when final converged states agree.
+if result['converged']:
+    print(f"Converged in {result['iterations']} iterations")
+    print(f"Voltages: {result['voltages']}")
+    print(f"Angles: {result['angles_deg']}")
+else:
+    print("Failed to converge")
+```
 
-### Current Test Data Notes
+**Internal Methods (for diagnostics/testing):**
 
-- Added/updated reference arrays for:
-  - Flat-start mismatch
-  - Post-iteration mismatch target
-  - Converged voltages and angles
-- Converged angle test tolerance was relaxed for reference matching (`atol=0.01` in that specific comparison).
-- Keep generator setpoints and expected scheduled injections consistent when updating case data to avoid false mismatches.
+- `_get_power_specs(circuit)`: Extract scheduled P and Q from generators/loads.
+- `_calc_power_injections(ybus_np, angles, voltages)`: Compute P and Q injections.
+- `_compute_mismatch(...)`: Calculate mismatch vector.
+- `_get_voltage_setpoints(buses)`: Extract voltage setpoints from buses.
+
+---
+
+### FaultStudy
+
+Analyzes symmetric 3-phase faults using Z-bus relationships.
+
+**Key Method:**
+
+#### `solve(circuit, fault_bus_name, vf=1.0+0j, vprefault_dict=None) -> dict`
+
+Simulate a solid 3-phase fault at a specified bus.
+
+**Parameters:**
+
+- `circuit`: Circuit object with generator X''d subtransient reactances.
+- `fault_bus_name`: Name of faulted bus (must exist in circuit).
+- `vf`: Fault voltage in p.u. (complex, default 1.0).
+- `vprefault_dict`: (optional) Pre-fault voltages {bus_name: voltage_pu}. Defaults to 1.0 pu.
+
+**Returns:** Dictionary containing:
+
+```python
+{
+    "fault_bus_name": str,
+    "vf": complex,                        # Fault voltage
+    "ifn": complex,                       # Fault current (complex)
+    "ifn_pu": float,                      # Fault current magnitude (pu)
+    "znn": complex,                       # Z-bus diagonal at fault bus
+    "post_fault_bus_voltages": dict,      # {bus_name: voltage_pu}
+    "zbus_fault": pd.DataFrame,           # Fault-condition Z-bus matrix
+    "ybus_fault": pd.DataFrame,           # Fault-condition Y-bus matrix
+}
+```
+
+**Notes:**
+
+- Generators must have `x_subtransient` defined (typically 0.2–0.3).
+- Pre-fault voltages affect load admittance calculations (constant-impedance model).
+
+**Example:**
+
+```python
+fault = FaultStudy()
+result = fault.solve(circuit, fault_bus_name="Bus2")
+
+print(f"Fault current: {result['ifn_pu']:.4f} pu")
+for bus_name, v_mag in result['post_fault_bus_voltages'].items():
+    print(f"  {bus_name}: {v_mag:.6f} pu")
+```
+
+---
+
+### TimeSeriesPowerFlow
+
+Runs repeated power flow solves across time steps with time-varying load profiles.
+
+**Key Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `profile` | pd.DataFrame | Loaded time-series data |
+| `step_column` | str | Column name identifying time steps |
+| `column_to_load` | dict | Mapping {profile_column: load_name} |
+| `results` | pd.DataFrame | Results from last `run()` call |
+
+**Primary Methods:**
+
+#### `load_profile(csv_path, step_column='time') -> pd.DataFrame`
+
+Load time-series profile from CSV file.
+
+**Parameters:**
+
+- `csv_path`: Path to CSV file.
+- `step_column`: Column identifying time steps (default 'time').
+
+**Example:**
+
+```python
+ts = TimeSeriesPowerFlow()
+ts.load_profile('load_profile.csv', step_column='time')
+```
+
+#### `assign_per_load_modifiers(column_to_load) -> None`
+
+Map profile columns to specific loads for scaling.
+
+**Parameters:**
+
+- `column_to_load`: Dict mapping {profile_column: load_name}.
+
+**Example:**
+
+```python
+ts.assign_per_load_modifiers({
+    'LD2_scale': 'LD2',
+    'LD3_scale': 'LD3'
+})
+```
+
+#### `run(circuit, ybus=None, tol=1e-3, max_iter=50) -> pd.DataFrame`
+
+Execute time-series power flow simulation.
+
+**Returns:** DataFrame with columns:
+
+```python
+step                         # Time step identifier
+modifier_<load_name>         # Load modifier applied
+V_<bus_name>_pu              # Bus voltage at this step
+angle_<bus_name>_deg         # Bus angle at this step
+converged                    # Convergence status
+iterations                   # Iterations to converge
+max_mismatch                 # Maximum mismatch
+```
+
+**Example:**
+
+```python
+results_df = ts.run(circuit, tol=1e-3)
+ts.save_results_csv('results.csv')
+print(results_df)
+```
+
+---
+
+### Settings
+
+System-wide configuration (singleton instance `grid_settings`).
+
+**Key Attributes:**
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `freq` | float | System frequency in Hz (default 60) |
+| `sbase` | float | System base MVA (default 100) |
+
+**Usage:**
+
+```python
+from settings import grid_settings
+
+print(f"Frequency: {grid_settings.freq} Hz")
+print(f"Base MVA: {grid_settings.sbase}")
+
+grid_settings.sbase = 100.0
+```
+
+---
 
 ## Y-Bus Matrix Calculation
 

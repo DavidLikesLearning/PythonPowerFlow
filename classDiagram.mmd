@@ -14,41 +14,69 @@ classDiagram
         - _bus_type: BusType
         - _vpu: float
         - _delta: float
+        - _bus_index: int
+        + name: str
+        + bus_index: int
         + nominal_kv: float
         + v: float
         + bus_type: BusType
         + vpu: float
         + delta: float
-        + reset_index_counter()
+        + __str__(): str
+        + __repr__(): str
     }
 
     class Transformer {
         - name: str
         - bus1_name: str
         - bus2_name: str
-        - r: float
-        - x: float
-        - g: float
-        - b: float
+        - _r: float
+        - _x: float
+        - _g: float
+        - _b: float
+        - _admittance_matrix: pd.DataFrame
+        + name: str
+        + bus1_name: str
+        + bus2_name: str
+        + r: float
+        + x: float
+        + g: float
+        + b: float
         + admittance_matrix: pd.DataFrame
+        + _build_admittance_matrix(): pd.DataFrame
     }
 
     class TransmissionLine {
-        - name: str
-        - bus1_name: str
-        - bus2_name: str
-        - r: float
-        - x: float
-        - g: float
-        - b: float
+        - _name: str
+        - _bus1_name: str
+        - _bus2_name: str
+        - _r: float
+        - _x: float
+        - _g: float
+        - _b: float
+        - _admittance_matrix: pd.DataFrame
+        + name: str
+        + bus1_name: str
+        + bus2_name: str
+        + r: float
+        + x: float
+        + g: float
+        + b: float
         + admittance_matrix: pd.DataFrame
+        + _build_admittance_matrix(): pd.DataFrame
     }
 
     class Load {
-        - name: str
-        - bus1_name: str
-        - mw: float
-        - mvar: float
+        - _name: str
+        - _bus1_name: str
+        - _mw: float
+        - _mvar: float
+        - _p: float | None
+        - _q: float | None
+        + name: str
+        + bus1_name: str
+        + mw: float
+        + mvar: float
         + mva: float
         + p: float | None
         + q: float | None
@@ -57,10 +85,17 @@ classDiagram
     }
 
     class Generator {
-        - name: str
-        - bus_name: str
-        - mw_setpoint: float
-        - v_setpoint: float | None
+        - _name: str
+        - _bus_name: str
+        - _mw_setpoint: float
+        - _v_setpoint: float | None
+        - _x_subtransient: float | None
+        - _p: float | None
+        + name: str
+        + bus_name: str
+        + mw_setpoint: float
+        + v_setpoint: float | None
+        + x_subtransient: float | None
         + p: float | None
         + calc_p(): float
     }
@@ -81,12 +116,12 @@ classDiagram
         + generators: dict
         + loads: dict
         + y_bus: pd.DataFrame
-        + calc_ybus(): pd.DataFrame
         + add_bus(name: str, nominal_kv: float, bus_type: BusType)
         + add_transformer()
         + add_transmission_line()
         + add_generator()
         + add_load()
+        + calc_ybus(): pd.DataFrame
     }
 
     class Settings {
@@ -95,25 +130,49 @@ classDiagram
         + freq: float
         + sbase: float
         + __init__()
+        + __repr__(): str
+        + __str__(): str
     }
 
     class PowerFlow {
         - converged: bool
         - iterations: int
         - mismatch_history: list[float]
-        - J1
-        - J2
-        - J3
-        - J4
-        - J
+        - J1: np.ndarray | None
+        - J2: np.ndarray | None
+        - J3: np.ndarray | None
+        - J4: np.ndarray | None
+        - J: np.ndarray | None
         + __init__()
-        + calc_jacobian(buses, ybus_np, angles, voltages)
-        + solve(buses_or_circuit, ybus=None, tol=1e-3, max_iter=50)
-        + _get_voltage_setpoints(buses)
-        + _extract_buses(circuit_or_buses)
-        + _get_power_specs(circuit_or_buses)
-        + _calc_power_injections(ybus_np, angles, voltages)
-        + _compute_mismatch(circuit_or_buses, ybus_np, angles, voltages)
+        + solve(circuit, ybus=None, tol=1e-3, max_iter=50): dict
+        + _get_voltage_setpoints(buses): np.ndarray
+        + _get_power_specs(circuit): tuple[np.ndarray, np.ndarray]
+        + _calc_power_injections(ybus_np, angles, voltages): tuple[np.ndarray, np.ndarray]
+        + _compute_mismatch(): float
+    }
+
+    class FaultStudy {
+        + solve(circuit, vf: complex, fault_bus_name: str, vprefault_dict: dict): dict
+        - _validate_fault_inputs(circuit, fault_bus_name: str, vf: complex): complex
+        - _calc_ybus_fault(circuit, vprefault_dict: dict): pd.DataFrame
+        - _calc_zbus_fault(circuit, vprefault_dict: dict): pd.DataFrame
+    }
+
+    class TimeSeriesPowerFlow {
+        - profile: pd.DataFrame | None
+        - step_column: str | None
+        - column_to_load: dict[str, str] | None
+        - results: pd.DataFrame | None
+        + __init__()
+        + load_profile(csv_path: str | Path, step_column: str): pd.DataFrame
+        + assign_per_load_modifiers(column_to_load: dict[str, str]): None
+        + run(circuit, ybus: Any, tol: float, max_iter: int): pd.DataFrame
+        + save_results_csv(output_path: str | Path): Path
+        - _validate_assignment_configured(): None
+        - _validate_profile_columns(): None
+        - _validate_assigned_loads_exist(circuit): None
+        - _get_step_value(row_index: int, row: pd.Series): Any
+        - _apply_modifiers_for_row(circuit, row: pd.Series, base_loads: dict): dict[str, float]
     }
 
     Circuit "1" o-- "*" Bus : contains
@@ -123,14 +182,16 @@ classDiagram
     Circuit "1" o-- "*" Generator : contains
     Circuit "1" o-- "*" Load : contains
 
-    Transformer "1" --> "1" Bus : bus1_name
-    Transformer "1" --> "1" Bus : bus2_name
-    TransmissionLine "1" --> "1" Bus : bus1_name
-    TransmissionLine "1" --> "1" Bus : bus2_name
+    Transformer "1" --> "2" Bus : bus1_name, bus2_name
+    TransmissionLine "1" --> "2" Bus : bus1_name, bus2_name
     Load "1" --> "1" Bus : bus1_name
     Generator "1" --> "1" Bus : bus_name
 
     PowerFlow ..> Circuit : solves
     PowerFlow ..> BusType : filters bus sets
+    FaultStudy ..> Circuit : analyzes
+    FaultStudy ..> PowerFlow : uses pre-fault voltages
+    TimeSeriesPowerFlow ..> Circuit : simulates
+    TimeSeriesPowerFlow ..> PowerFlow : runs solver
     Generator ..> Settings : uses sbase
     Load ..> Settings : uses sbase
