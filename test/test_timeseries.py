@@ -59,13 +59,13 @@ def test_timeseries_per_load_modifier_runs_and_aggregates(tmp_path):
     expected_steps = [_solve_two_bus_step(load_scale) for load_scale in expected_modifiers]
     for row, expected in zip(results.itertuples(index=False), expected_steps):
         np.testing.assert_allclose(
-            [row.V_One_pu, row.V_Two_pu],
+            np.array([row.V_One_pu, row.V_Two_pu],dtype=float),
             expected["voltages"],
             atol=_VOLTAGE_TOL,
             rtol=0,
         )
         np.testing.assert_allclose(
-            [row.angle_One_deg, row.angle_Two_deg],
+            np.array([row.angle_One_deg, row.angle_Two_deg],dtype=float),
             expected["angles_deg"],
             atol=_ANGLE_TOL,
             rtol=0,
