@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>TIMESERIES_README</title>
+
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         max-width: 960px; margin: 40px auto; padding: 0 24px;
+         color: #24292e; line-height: 1.6; }
+  h1, h2, h3, h4 { border-bottom: 1px solid #eaecef; padding-bottom: .3em; margin-top: 1.5em; }
+  h1 { border-bottom: 2px solid #0366d6; }
+  code { background: #f6f8fa; padding: .2em .4em; border-radius: 3px;
+         font-family: "SFMono-Regular", Consolas, monospace; font-size: 85%; }
+  pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }
+  pre code { background: none; padding: 0; font-size: 90%; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th, td { border: 1px solid #dfe2e5; padding: 8px 13px; }
+  th { background: #f6f8fa; font-weight: 600; }
+  tr:nth-child(even) { background: #f9f9f9; }
+  blockquote { border-left: 4px solid #0366d6; margin: 0; padding: 0 1em; color: #586069; background: #f1f8ff; }
+  a { color: #0366d6; }
+  hr { border: none; border-top: 1px solid #eaecef; }
+</style>
+
+</head>
+<body>
+<h1 id="time-series-power-flow-user-guide">Time-Series Power Flow — User Guide</h1>
+<p>This guide walks you through running a time-series power flow study from scratch: building a circuit, preparing the input CSV, running the simulation, and working with the results.</p>
+<p>The <code>TimeSeriesPowerFlow</code> class in <code>timeseries.py</code> wraps the Newton-Raphson solver and runs it repeatedly across time steps. At each step, load values are scaled by multipliers you supply in a CSV file. Bus voltages, angles, and solver diagnostics are recorded for every step. Load values are automatically restored to their originals after the run.</p>
+<blockquote>
+<p><strong>Depends on the base power flow module.</strong> This guide covers only the time-series-specific setup. For a full explanation of <code>Circuit</code>, <code>Bus</code>, <code>TransmissionLine</code>, <code>Generator</code>, <code>Load</code>, and the Newton-Raphson solver, see <a href="README.md">README.md</a>. You should be comfortable building and solving a basic circuit before continuing here.</p>
+</blockquote>
+<hr />
+<h2 id="prerequisites">Prerequisites</h2>
+<p>Install dependencies and make sure the package is importable:</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>numpy<span class="w"> </span>pandas
+</code></pre></div>
+
+<p>All imports in this guide assume you are running from the repository root.</p>
+<hr />
+<h2 id="step-1-build-the-circuit">Step 1 — Build the Circuit</h2>
+<p>Start by creating a <code>Circuit</code> object and adding your network equipment. You must call <code>calc_ybus()</code> before running the time-series study.</p>
+<h3 id="1a-create-the-circuit">1a. Create the circuit</h3>
+<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">circuit</span><span class="w"> </span><span class="kn">import</span> <span class="n">Circuit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bus</span><span class="w"> </span><span class="kn">import</span> <span class="n">BusType</span>
+
+<span class="n">circuit</span> <span class="o">=</span> <span class="n">Circuit</span><span class="p">(</span><span class="s2">&quot;My Two-Bus System&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="1b-add-buses">1b. Add buses</h3>
+<p>Every circuit needs at least one <strong>Slack</strong> bus (the voltage reference) and one or more <strong>PQ</strong> buses (load buses).</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># add_bus(name, nominal_kv, bus_type)</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">add_bus</span><span class="p">(</span><span class="s2">&quot;Substation&quot;</span><span class="p">,</span> <span class="mf">230.0</span><span class="p">,</span> <span class="n">bus_type</span><span class="o">=</span><span class="n">BusType</span><span class="o">.</span><span class="n">Slack</span><span class="p">)</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">add_bus</span><span class="p">(</span><span class="s2">&quot;Load Bus&quot;</span><span class="p">,</span>   <span class="mf">230.0</span><span class="p">,</span> <span class="n">bus_type</span><span class="o">=</span><span class="n">BusType</span><span class="o">.</span><span class="n">PQ</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Supported bus types are <code>BusType.Slack</code>, <code>BusType.PQ</code>, and <code>BusType.PV</code>.</p>
+<h3 id="1c-add-a-transmission-line">1c. Add a transmission line</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1"># add_transmission_line(name, from_bus, to_bus, r, x)</span>
+<span class="c1"># r and x are in per-unit on the system base</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">add_transmission_line</span><span class="p">(</span><span class="s2">&quot;L1&quot;</span><span class="p">,</span> <span class="s2">&quot;Substation&quot;</span><span class="p">,</span> <span class="s2">&quot;Load Bus&quot;</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="1d-add-a-generator">1d. Add a generator</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1"># add_generator(name, bus, voltage_setpoint, mw_setpoint)</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">add_generator</span><span class="p">(</span><span class="s2">&quot;G1&quot;</span><span class="p">,</span> <span class="s2">&quot;Substation&quot;</span><span class="p">,</span> <span class="n">voltage_setpoint</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">mw_setpoint</span><span class="o">=</span><span class="mf">200.0</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="1e-add-loads">1e. Add loads</h3>
+<p>Each load gets a name that you will reference later in the CSV mapping.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># add_load(name, bus, mw, mvar)</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">add_load</span><span class="p">(</span><span class="s2">&quot;LD_A&quot;</span><span class="p">,</span> <span class="s2">&quot;Load Bus&quot;</span><span class="p">,</span> <span class="n">mw</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span> <span class="n">mvar</span><span class="o">=</span><span class="mf">50.0</span><span class="p">)</span>
+</code></pre></div>
+
+<p>These MW and MVAR values are the <strong>base values</strong>. The time-series study scales them at each step.</p>
+<h3 id="1f-build-the-y-bus">1f. Build the Y-bus</h3>
+<div class="codehilite"><pre><span></span><code><span class="n">circuit</span><span class="o">.</span><span class="n">calc_ybus</span><span class="p">()</span>
+</code></pre></div>
+
+<p>This must be called before <code>TimeSeriesPowerFlow.run()</code>.</p>
+<hr />
+<h2 id="step-2-prepare-the-input-csv">Step 2 — Prepare the Input CSV</h2>
+<p>The profile CSV drives the study. Each row is one time step. The file needs:</p>
+<ul>
+<li>A <strong>step column</strong> (e.g. <code>time</code>) that labels each row in the output. You can omit this and use the row index instead by passing <code>step_column=None</code>.</li>
+<li>One <strong>modifier column per load</strong> you want to vary. The modifier is a non-negative scale factor applied to that load's base MW and MVAR values at each step.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Modifier value</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>1.0</code></td>
+<td>No change — load stays at its base values</td>
+</tr>
+<tr>
+<td><code>0.5</code></td>
+<td>Load is halved (50 MW / 25 MVAR for a 100 MW / 50 MVAR base)</td>
+</tr>
+<tr>
+<td><code>1.25</code></td>
+<td>Load is increased by 25 %</td>
+</tr>
+<tr>
+<td><code>0.0</code></td>
+<td>Load is switched off</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-single-load-five-steps">Example — single load, five steps</h3>
+<p>Save this as <code>my_profile.csv</code>:</p>
+<div class="codehilite"><pre><span></span><code>time,LD_A_scale
+1,1.0
+2,0.75
+3,0.5
+4,0.75
+5,1.0
+</code></pre></div>
+
+<p>At step 3 the load <code>LD_A</code> would be scaled to 50 MW / 25 MVAR (0.5 × base).</p>
+<h3 id="example-two-loads-with-independent-profiles">Example — two loads with independent profiles</h3>
+<div class="codehilite"><pre><span></span><code>time,LD_A_scale,LD_B_scale
+1,1.0,0.8
+2,0.5,1.0
+3,0.75,1.2
+4,1.0,0.9
+</code></pre></div>
+
+<p>Column names in the CSV can be anything; the mapping between column name and load name is defined in Step 4.</p>
+<hr />
+<h2 id="step-3-create-the-runner-and-load-the-profile">Step 3 — Create the Runner and Load the Profile</h2>
+<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">timeseries</span><span class="w"> </span><span class="kn">import</span> <span class="n">TimeSeriesPowerFlow</span>
+
+<span class="n">ts</span> <span class="o">=</span> <span class="n">TimeSeriesPowerFlow</span><span class="p">()</span>
+
+<span class="c1"># load_profile(csv_path, step_column)</span>
+<span class="c1"># step_column: the column whose values label each time step in the output.</span>
+<span class="c1"># Pass step_column=None to use the integer row index instead.</span>
+<span class="n">ts</span><span class="o">.</span><span class="n">load_profile</span><span class="p">(</span><span class="s2">&quot;my_profile.csv&quot;</span><span class="p">,</span> <span class="n">step_column</span><span class="o">=</span><span class="s2">&quot;time&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p><code>load_profile</code> raises <code>FileNotFoundError</code> if the file does not exist and <code>ValueError</code> if <code>step_column</code> is specified but is not a column in the file.</p>
+<hr />
+<h2 id="step-4-map-csv-columns-to-circuit-loads">Step 4 — Map CSV Columns to Circuit Loads</h2>
+<p>Tell the runner which CSV column controls which load in your circuit. The key is the column name in the CSV; the value is the load name as added to the circuit.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># Single load</span>
+<span class="n">ts</span><span class="o">.</span><span class="n">assign_per_load_modifiers</span><span class="p">({</span>
+    <span class="s2">&quot;LD_A_scale&quot;</span><span class="p">:</span> <span class="s2">&quot;LD_A&quot;</span><span class="p">,</span>
+<span class="p">})</span>
+
+<span class="c1"># Two loads with independent profiles</span>
+<span class="n">ts</span><span class="o">.</span><span class="n">assign_per_load_modifiers</span><span class="p">({</span>
+    <span class="s2">&quot;LD_A_scale&quot;</span><span class="p">:</span> <span class="s2">&quot;LD_A&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;LD_B_scale&quot;</span><span class="p">:</span> <span class="s2">&quot;LD_B&quot;</span><span class="p">,</span>
+<span class="p">})</span>
+</code></pre></div>
+
+<p><code>assign_per_load_modifiers</code> raises <code>ValueError</code> if the mapping is empty or contains blank strings.</p>
+<hr />
+<h2 id="step-5-run-the-study">Step 5 — Run the Study</h2>
+<div class="codehilite"><pre><span></span><code><span class="n">results</span> <span class="o">=</span> <span class="n">ts</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">circuit</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Optional solver parameters:</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ybus</code></td>
+<td><code>None</code></td>
+<td>Pass a custom Y-bus matrix; defaults to <code>circuit.y_bus</code></td>
+</tr>
+<tr>
+<td><code>tol</code></td>
+<td><code>1e-3</code></td>
+<td>Newton-Raphson convergence tolerance</td>
+</tr>
+<tr>
+<td><code>max_iter</code></td>
+<td><code>50</code></td>
+<td>Maximum solver iterations per time step</td>
+</tr>
+</tbody>
+</table>
+<p><code>run()</code> raises <code>ValueError</code> if <code>load_profile()</code> or <code>assign_per_load_modifiers()</code> has not been called first. Load base values are always restored after the run completes, even if an error occurs mid-simulation.</p>
+<hr />
+<h2 id="step-6-working-with-the-results">Step 6 — Working with the Results</h2>
+<p><code>run()</code> returns a <code>pandas.DataFrame</code> with one row per time step. The same DataFrame is also accessible as <code>ts.results</code> at any time after the run.</p>
+<h3 id="output-columns">Output columns</h3>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>step</code></td>
+<td>any</td>
+<td>Value from the step column, or row index if <code>step_column=None</code></td>
+</tr>
+<tr>
+<td><code>modifier_&lt;load_name&gt;</code></td>
+<td>float</td>
+<td>Scale factor applied to that load at this step</td>
+</tr>
+<tr>
+<td><code>V_&lt;bus_name&gt;_pu</code></td>
+<td>float</td>
+<td>Bus voltage magnitude in per-unit</td>
+</tr>
+<tr>
+<td><code>angle_&lt;bus_name&gt;_deg</code></td>
+<td>float</td>
+<td>Bus voltage angle in degrees</td>
+</tr>
+<tr>
+<td><code>converged</code></td>
+<td>bool</td>
+<td><code>True</code> if the Newton-Raphson solver converged</td>
+</tr>
+<tr>
+<td><code>iterations</code></td>
+<td>int</td>
+<td>Number of solver iterations used</td>
+</tr>
+<tr>
+<td><code>max_mismatch</code></td>
+<td>float</td>
+<td>Final power mismatch; <code>NaN</code> if unavailable</td>
+</tr>
+</tbody>
+</table>
+<h3 id="example-output">Example output</h3>
+<p>For the two-bus circuit and five-step profile from this guide:</p>
+<table>
+<thead>
+<tr>
+<th>step</th>
+<th>modifier_LD_A</th>
+<th>V_Substation_pu</th>
+<th>V_Load Bus_pu</th>
+<th>angle_Substation_deg</th>
+<th>angle_Load Bus_deg</th>
+<th>converged</th>
+<th>iterations</th>
+<th>max_mismatch</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>1.00</td>
+<td>1.0000</td>
+<td>0.9724</td>
+<td>0.0</td>
+<td>-2.87</td>
+<td>True</td>
+<td>4</td>
+<td>8.1e-07</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0.75</td>
+<td>1.0000</td>
+<td>0.9793</td>
+<td>0.0</td>
+<td>-2.15</td>
+<td>True</td>
+<td>4</td>
+<td>4.9e-07</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0.50</td>
+<td>1.0000</td>
+<td>0.9862</td>
+<td>0.0</td>
+<td>-1.43</td>
+<td>True</td>
+<td>3</td>
+<td>2.0e-07</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0.75</td>
+<td>1.0000</td>
+<td>0.9793</td>
+<td>0.0</td>
+<td>-2.15</td>
+<td>True</td>
+<td>4</td>
+<td>4.9e-07</td>
+</tr>
+<tr>
+<td>5</td>
+<td>1.00</td>
+<td>1.0000</td>
+<td>0.9724</td>
+<td>0.0</td>
+<td>-2.87</td>
+<td>True</td>
+<td>4</td>
+<td>8.1e-07</td>
+</tr>
+</tbody>
+</table>
+<h3 id="extracting-specific-values">Extracting specific values</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1"># All voltage magnitudes at the load bus</span>
+<span class="n">v_series</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="s2">&quot;V_Load Bus_pu&quot;</span><span class="p">]</span>
+
+<span class="c1"># Voltage at a specific time step (step value 3)</span>
+<span class="n">v_at_step3</span> <span class="o">=</span> <span class="n">results</span><span class="o">.</span><span class="n">loc</span><span class="p">[</span><span class="n">results</span><span class="p">[</span><span class="s2">&quot;step&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;V_Load Bus_pu&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+<span class="c1"># All steps where the solver did not converge</span>
+<span class="n">non_converged</span> <span class="o">=</span> <span class="n">results</span><span class="p">[</span><span class="n">results</span><span class="p">[</span><span class="s2">&quot;converged&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="kc">False</span><span class="p">]</span>
+
+<span class="c1"># Summary statistics for the load modifier</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">results</span><span class="p">[</span><span class="s2">&quot;modifier_LD_A&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">describe</span><span class="p">())</span>
+
+<span class="c1"># Select only voltage and angle columns</span>
+<span class="n">voltage_cols</span> <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">results</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;V_&quot;</span><span class="p">)]</span>
+<span class="n">angle_cols</span>   <span class="o">=</span> <span class="p">[</span><span class="n">c</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">results</span><span class="o">.</span><span class="n">columns</span> <span class="k">if</span> <span class="n">c</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;angle_&quot;</span><span class="p">)]</span>
+<span class="n">profile_only</span> <span class="o">=</span> <span class="n">results</span><span class="p">[[</span><span class="s2">&quot;step&quot;</span><span class="p">]</span> <span class="o">+</span> <span class="n">voltage_cols</span> <span class="o">+</span> <span class="n">angle_cols</span><span class="p">]</span>
+</code></pre></div>
+
+<hr />
+<h2 id="step-7-save-results-to-csv">Step 7 — Save Results to CSV</h2>
+<div class="codehilite"><pre><span></span><code><span class="n">ts</span><span class="o">.</span><span class="n">save_results_csv</span><span class="p">(</span><span class="s2">&quot;timeseries_output.csv&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>This writes the <code>results</code> DataFrame to a CSV file with no row index. <code>save_results_csv</code> raises <code>ValueError</code> if called before <code>run()</code>.</p>
+<p>The saved file mirrors the DataFrame structure exactly — one header row followed by one data row per time step.</p>
+<hr />
+<h2 id="complete-example">Complete Example</h2>
+<p>The following end-to-end script combines all steps above:</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">circuit</span><span class="w"> </span><span class="kn">import</span> <span class="n">Circuit</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">bus</span><span class="w"> </span><span class="kn">import</span> <span class="n">BusType</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">timeseries</span><span class="w"> </span><span class="kn">import</span> <span class="n">TimeSeriesPowerFlow</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="c1"># Step 1 — Build the circuit</span>
+<span class="n">circuit</span> <span class="o">=</span> <span class="n">Circuit</span><span class="p">(</span><span class="s2">&quot;Two-Bus Example&quot;</span><span class="p">)</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">add_bus</span><span class="p">(</span><span class="s2">&quot;Substation&quot;</span><span class="p">,</span> <span class="mf">230.0</span><span class="p">,</span> <span class="n">bus_type</span><span class="o">=</span><span class="n">BusType</span><span class="o">.</span><span class="n">Slack</span><span class="p">)</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">add_bus</span><span class="p">(</span><span class="s2">&quot;Load Bus&quot;</span><span class="p">,</span>   <span class="mf">230.0</span><span class="p">,</span> <span class="n">bus_type</span><span class="o">=</span><span class="n">BusType</span><span class="o">.</span><span class="n">PQ</span><span class="p">)</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">add_transmission_line</span><span class="p">(</span><span class="s2">&quot;L1&quot;</span><span class="p">,</span> <span class="s2">&quot;Substation&quot;</span><span class="p">,</span> <span class="s2">&quot;Load Bus&quot;</span><span class="p">,</span> <span class="n">r</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">x</span><span class="o">=</span><span class="mf">0.2</span><span class="p">)</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">add_generator</span><span class="p">(</span><span class="s2">&quot;G1&quot;</span><span class="p">,</span> <span class="s2">&quot;Substation&quot;</span><span class="p">,</span> <span class="n">voltage_setpoint</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">mw_setpoint</span><span class="o">=</span><span class="mf">200.0</span><span class="p">)</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">add_load</span><span class="p">(</span><span class="s2">&quot;LD_A&quot;</span><span class="p">,</span> <span class="s2">&quot;Load Bus&quot;</span><span class="p">,</span> <span class="n">mw</span><span class="o">=</span><span class="mf">100.0</span><span class="p">,</span> <span class="n">mvar</span><span class="o">=</span><span class="mf">50.0</span><span class="p">)</span>
+<span class="n">circuit</span><span class="o">.</span><span class="n">calc_ybus</span><span class="p">()</span>
+
+<span class="c1"># Step 2 — Write the profile CSV</span>
+<span class="n">profile</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span>
+    <span class="s2">&quot;time&quot;</span><span class="p">:</span>      <span class="p">[</span><span class="mi">1</span><span class="p">,</span>    <span class="mi">2</span><span class="p">,</span>    <span class="mi">3</span><span class="p">,</span>   <span class="mi">4</span><span class="p">,</span>    <span class="mi">5</span>   <span class="p">],</span>
+    <span class="s2">&quot;LD_A_scale&quot;</span><span class="p">:[</span><span class="mf">1.0</span><span class="p">,</span>  <span class="mf">0.75</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>
+<span class="p">})</span>
+<span class="n">profile</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">&quot;my_profile.csv&quot;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<span class="c1"># Steps 3–5 — Configure and run</span>
+<span class="n">ts</span> <span class="o">=</span> <span class="n">TimeSeriesPowerFlow</span><span class="p">()</span>
+<span class="n">ts</span><span class="o">.</span><span class="n">load_profile</span><span class="p">(</span><span class="s2">&quot;my_profile.csv&quot;</span><span class="p">,</span> <span class="n">step_column</span><span class="o">=</span><span class="s2">&quot;time&quot;</span><span class="p">)</span>
+<span class="n">ts</span><span class="o">.</span><span class="n">assign_per_load_modifiers</span><span class="p">({</span><span class="s2">&quot;LD_A_scale&quot;</span><span class="p">:</span> <span class="s2">&quot;LD_A&quot;</span><span class="p">})</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">ts</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">circuit</span><span class="p">)</span>
+
+<span class="c1"># Step 6 — Inspect results</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">results</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Load bus voltages:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">results</span><span class="p">[[</span><span class="s2">&quot;step&quot;</span><span class="p">,</span> <span class="s2">&quot;V_Load Bus_pu&quot;</span><span class="p">,</span> <span class="s2">&quot;angle_Load Bus_deg&quot;</span><span class="p">]])</span>
+
+<span class="c1"># Step 7 — Save</span>
+<span class="n">ts</span><span class="o">.</span><span class="n">save_results_csv</span><span class="p">(</span><span class="s2">&quot;timeseries_output.csv&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>You can also run the equivalent built-in example script directly:</p>
+<div class="codehilite"><pre><span></span><code><span class="nv">PYTHONPATH</span><span class="o">=</span>.<span class="w"> </span>python<span class="w"> </span>timeseries_main.py
+</code></pre></div>
+
+<p>This builds the same two-bus system, writes <code>timeseries_input.csv</code>, runs the study, prints the Y-bus and full results, and saves <code>timeseries_output.csv</code>.</p>
+<hr />
+<h2 id="api-quick-reference">API Quick Reference</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Signature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>load_profile</code></td>
+<td><code>(csv_path, step_column="time")</code></td>
+<td>Read the profile CSV.</td>
+</tr>
+<tr>
+<td><code>assign_per_load_modifiers</code></td>
+<td><code>(column_to_load: dict)</code></td>
+<td>Map CSV columns to load names.</td>
+</tr>
+<tr>
+<td><code>run</code></td>
+<td><code>(circuit, ybus=None, tol=1e-3, max_iter=50)</code></td>
+<td>Execute the study; returns a <code>DataFrame</code>.</td>
+</tr>
+<tr>
+<td><code>save_results_csv</code></td>
+<td><code>(output_path)</code></td>
+<td>Write results to CSV.</td>
+</tr>
+<tr>
+<td><code>ts.results</code></td>
+<td>attribute</td>
+<td>The <code>DataFrame</code> returned by the last <code>run()</code> call.</td>
+</tr>
+</tbody>
+</table>
+</body>
+</html>

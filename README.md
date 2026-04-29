@@ -771,6 +771,8 @@ for bus_name, v_mag in result['post_fault_bus_voltages'].items():
 
 Runs repeated power flow solves across time steps with time-varying load profiles.
 
+> **Full user guide available.** For a step-by-step walkthrough — including how to build the circuit, prepare the input CSV, map load modifiers, and extract results — see [TIMESERIES_README.md](TIMESERIES_README.md).
+
 **Key Attributes:**
 
 | Attribute | Type | Description |
