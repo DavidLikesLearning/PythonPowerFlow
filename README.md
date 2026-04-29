@@ -126,15 +126,15 @@ circuit.add_transmission_line(
 circuit.add_generator(
     name="Gen1",
     bus_name="Bus1",
-    mw_setpoint=0.0,              # Slack bus absorbs imbalance
-    v_setpoint=1.00               # Slack voltage reference
+    voltage_setpoint=1.00,       # Slack voltage reference
+    mw_setpoint=0.0,             # Slack bus absorbs imbalance
 )
 
 circuit.add_generator(
     name="Gen3",
     bus_name="Bus3",
+    voltage_setpoint=1.02,
     mw_setpoint=150.0,
-    v_setpoint=1.02
 )
 
 # Step 5: Add loads (sinks)
@@ -599,12 +599,12 @@ Add a transmission line between two buses and automatically rebuild Y-bus.
 circuit.add_transmission_line("Line12", "Bus1", "Bus2", r=0.01, x=0.1, b=0.02)
 ```
 
-#### `add_generator(name, bus_name, mw_setpoint, v_setpoint=None, x_subtransient=1.0)`
+#### `add_generator(name, bus_name, voltage_setpoint, mw_setpoint, x_subtransient=1.0)`
 
 Add a generator to a bus.
 
 ```python
-circuit.add_generator("Gen1", "Bus1", mw_setpoint=100.0, v_setpoint=1.05)
+circuit.add_generator("Gen1", "Bus1", voltage_setpoint=1.05, mw_setpoint=100.0)
 ```
 
 #### `add_load(name, bus_name, mw, mvar)`
@@ -636,8 +636,8 @@ circuit.add_transmission_line("L12", "Bus1", "Bus2", r=0.02, x=0.25)
 circuit.add_transformer("T23", "Bus2", "Bus3", r=0.005, x=0.05)
 
 # Add generators and loads
-circuit.add_generator("G1", "Bus1", mw_setpoint=200.0, v_setpoint=1.00)
-circuit.add_generator("G3", "Bus3", mw_setpoint=100.0, v_setpoint=1.05)
+circuit.add_generator("G1", "Bus1", voltage_setpoint=1.00, mw_setpoint=200.0)
+circuit.add_generator("G3", "Bus3", voltage_setpoint=1.05, mw_setpoint=100.0)
 circuit.add_load("L2", "Bus2", mw=150.0, mvar=50.0)
 
 # Build Y-bus (final step)
