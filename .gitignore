@@ -8,5 +8,5 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 .vscode/
-.vscode/settings.json
+README.html
 git-cheatsheet.md
