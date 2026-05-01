@@ -22,7 +22,7 @@ import pytest
 
 from bus import BusType
 from circuit import Circuit
-from opfs import solve_socp, solve_dc_opf
+from opfs import solve_socp, solve_dc_opf, solve_pandapower
 
 # ── Shared constants ───────────────────────────────────────────────────────
 VN_KV   = 345.0
@@ -70,12 +70,12 @@ def make_pandapower_net():
     b2 = pp.create_bus(net, VN_KV, name="Bus2")
     b3 = pp.create_bus(net, VN_KV, name="Bus3")
 
-    eg_idx = pp.create_ext_grid(
+    pp.create_ext_grid(
         net, b1, vm_pu=1.00, name="Gen1",
         min_p_mw=0.0, max_p_mw=500.0,
         min_q_mvar=-300.0, max_q_mvar=300.0,
     )
-    g2_idx = pp.create_gen(
+    pp.create_gen(
         net, b2, p_mw=200.0, vm_pu=1.05, name="Gen2",
         min_p_mw=0.0, max_p_mw=200.0,
         min_q_mvar=-100.0, max_q_mvar=100.0,
@@ -96,7 +96,7 @@ def make_pandapower_net():
             max_i_ka=10.0, name=name,
         )
 
-    return net, eg_idx, g2_idx
+    return net
 
 
 # ── SOCP pf vs pandapower AC PF ───────────────────────────────────────────
@@ -110,14 +110,13 @@ def test_socp_pf_converges():
 def test_socp_pf_vs_pandapower_vmag():
     """SOCP pf voltage magnitudes match pandapower Newton-Raphson within 5e-3 pu."""
     c = make_circuit()
-    r = solve_socp(c, mode="pf")
+    r_socp = solve_socp(c, mode="pf")
 
-    net, _, _ = make_pandapower_net()
-    pp.runpp(net, algorithm="nr", calculate_voltage_angles=True, max_iteration=50)
+    r_pp = solve_pandapower(make_pandapower_net(), mode="pf")
+    assert r_pp["converged"], "pandapower AC PF did not converge"
 
-    pp_vm = net.res_bus["vm_pu"].values   # [Bus1, Bus2, Bus3]
     np.testing.assert_allclose(
-        r["v_mag"], pp_vm, atol=5e-3,
+        r_socp["v_mag"], r_pp["v_mag"], atol=5e-3,
         err_msg="v_mag: SOCP pf vs pandapower AC PF",
     )
 
@@ -125,14 +124,13 @@ def test_socp_pf_vs_pandapower_vmag():
 def test_socp_pf_vs_pandapower_vang():
     """SOCP pf voltage angles match pandapower Newton-Raphson within 0.5°."""
     c = make_circuit()
-    r = solve_socp(c, mode="pf")
+    r_socp = solve_socp(c, mode="pf")
 
-    net, _, _ = make_pandapower_net()
-    pp.runpp(net, algorithm="nr", calculate_voltage_angles=True, max_iteration=50)
+    r_pp = solve_pandapower(make_pandapower_net(), mode="pf")
+    assert r_pp["converged"], "pandapower AC PF did not converge"
 
-    pp_va = net.res_bus["va_degree"].values
     np.testing.assert_allclose(
-        r["v_ang_deg"], pp_va, atol=0.5,
+        r_socp["v_ang_deg"], r_pp["v_ang_deg"], atol=0.5,
         err_msg="v_ang_deg: SOCP pf vs pandapower AC PF",
     )
 
@@ -140,14 +138,13 @@ def test_socp_pf_vs_pandapower_vang():
 def test_socp_pf_vs_pandapower_line_flows():
     """SOCP pf from-end real power matches pandapower within 5e-3 pu."""
     c = make_circuit()
-    r = solve_socp(c, mode="pf")
+    r_socp = solve_socp(c, mode="pf")
 
-    net, _, _ = make_pandapower_net()
-    pp.runpp(net, algorithm="nr", calculate_voltage_angles=True, max_iteration=50)
+    r_pp = solve_pandapower(make_pandapower_net(), mode="pf")
+    assert r_pp["converged"], "pandapower AC PF did not converge"
 
-    pp_pfr = net.res_line["p_from_mw"].values / SN_MVA   # L12, L13, L23 in pu
     np.testing.assert_allclose(
-        r["p_fr"], pp_pfr, atol=5e-3,
+        r_socp["p_fr"], r_pp["p_fr"], atol=5e-3,
         err_msg="p_fr: SOCP pf vs pandapower AC PF",
     )
 
@@ -163,23 +160,21 @@ def test_dc_opf_converges():
 def test_dc_opf_vs_pandapower_dispatch():
     """DC OPF optimal dispatch matches pandapower DC OPF within 1 MW."""
     c = make_circuit()
-    r = solve_dc_opf(c, mode="opf", gen_limits=GEN_LIMITS, gen_costs=GEN_COSTS)
+    r_dc = solve_dc_opf(c, mode="opf", gen_limits=GEN_LIMITS, gen_costs=GEN_COSTS)
 
-    net, eg_idx, g2_idx = make_pandapower_net()
-    pp.create_poly_cost(net, eg_idx, "ext_grid", cp1_eur_per_mw=GEN_COSTS["Gen1"])
-    pp.create_poly_cost(net, g2_idx, "gen",      cp1_eur_per_mw=GEN_COSTS["Gen2"])
-    pp.rundcopp(net, verbose=False)
-
-    assert net["OPF_converged"], "pandapower DC OPF did not converge"
+    r_pp = solve_pandapower(
+        make_pandapower_net(), mode="opf", gen_costs=GEN_COSTS
+    )
+    assert r_pp["converged"], "pandapower DC OPF did not converge"
 
     # Gen2 is cheaper — should be at P_max=200 MW regardless of solver
-    gen2_mw_our = r["details"]["p_gen_pu"][1] * SN_MVA
-    gen2_mw_pp  = net.res_gen["p_mw"].values[0]
+    gen2_mw_our = r_dc["details"]["p_gen_pu"][1] * SN_MVA
+    gen2_mw_pp  = r_pp["details"]["p_gen_mw"][0]
     np.testing.assert_allclose(gen2_mw_our, gen2_mw_pp, atol=1.0,
                                err_msg="Gen2 dispatch: DC OPF vs pandapower")
 
-    gen1_mw_our = r["details"]["p_gen_pu"][0] * SN_MVA
-    gen1_mw_pp  = net.res_ext_grid["p_mw"].values[0]
+    gen1_mw_our = r_dc["details"]["p_gen_pu"][0] * SN_MVA
+    gen1_mw_pp  = r_pp["details"]["p_ext_grid_mw"][0]
     np.testing.assert_allclose(gen1_mw_our, gen1_mw_pp, atol=1.0,
                                err_msg="Gen1 (slack) dispatch: DC OPF vs pandapower")
 
@@ -187,16 +182,15 @@ def test_dc_opf_vs_pandapower_dispatch():
 def test_dc_opf_vs_pandapower_angles():
     """DC OPF bus angles match pandapower DC OPF within 0.1°."""
     c = make_circuit()
-    r = solve_dc_opf(c, mode="opf", gen_limits=GEN_LIMITS, gen_costs=GEN_COSTS)
+    r_dc = solve_dc_opf(c, mode="opf", gen_limits=GEN_LIMITS, gen_costs=GEN_COSTS)
 
-    net, eg_idx, g2_idx = make_pandapower_net()
-    pp.create_poly_cost(net, eg_idx, "ext_grid", cp1_eur_per_mw=GEN_COSTS["Gen1"])
-    pp.create_poly_cost(net, g2_idx, "gen",      cp1_eur_per_mw=GEN_COSTS["Gen2"])
-    pp.rundcopp(net, verbose=False)
+    r_pp = solve_pandapower(
+        make_pandapower_net(), mode="opf", gen_costs=GEN_COSTS
+    )
+    assert r_pp["converged"], "pandapower DC OPF did not converge"
 
-    pp_va = net.res_bus["va_degree"].values
     np.testing.assert_allclose(
-        r["v_ang_deg"], pp_va, atol=0.1,
+        r_dc["v_ang_deg"], r_pp["v_ang_deg"], atol=0.1,
         err_msg="v_ang_deg: DC OPF vs pandapower DC OPF",
     )
 
@@ -204,16 +198,15 @@ def test_dc_opf_vs_pandapower_angles():
 def test_dc_opf_vs_pandapower_line_flows():
     """DC OPF from-end real power matches pandapower DC OPF within 5e-3 pu."""
     c = make_circuit()
-    r = solve_dc_opf(c, mode="opf", gen_limits=GEN_LIMITS, gen_costs=GEN_COSTS)
+    r_dc = solve_dc_opf(c, mode="opf", gen_limits=GEN_LIMITS, gen_costs=GEN_COSTS)
 
-    net, eg_idx, g2_idx = make_pandapower_net()
-    pp.create_poly_cost(net, eg_idx, "ext_grid", cp1_eur_per_mw=GEN_COSTS["Gen1"])
-    pp.create_poly_cost(net, g2_idx, "gen",      cp1_eur_per_mw=GEN_COSTS["Gen2"])
-    pp.rundcopp(net, verbose=False)
+    r_pp = solve_pandapower(
+        make_pandapower_net(), mode="opf", gen_costs=GEN_COSTS
+    )
+    assert r_pp["converged"], "pandapower DC OPF did not converge"
 
-    pp_pfr = net.res_line["p_from_mw"].values / SN_MVA
     np.testing.assert_allclose(
-        r["p_fr"], pp_pfr, atol=5e-3,
+        r_dc["p_fr"], r_pp["p_fr"], atol=5e-3,
         err_msg="p_fr: DC OPF vs pandapower DC OPF",
     )
 
@@ -235,3 +228,23 @@ def test_dc_opf_power_balance():
     p_gen_total = sum(r["details"]["p_gen_pu"]) * SN_MVA
     np.testing.assert_allclose(p_gen_total, 300.0, atol=0.1,
                                err_msg="DC OPF power balance: gen != load")
+
+
+# ── pandapower CSV output ─────────────────────────────────────────────────
+
+def test_pandapower_csv_output(tmp_path):
+    """solve_pandapower writes a valid two-section CSV."""
+    import csv
+
+    out = tmp_path / "pp_out.csv"
+    r = solve_pandapower(make_pandapower_net(), mode="pf", output_csv=str(out))
+    assert r["converged"]
+    assert out.exists()
+
+    rows = list(csv.reader(out.open()))
+    # First row is bus header
+    assert rows[0] == ["bus_name", "v_mag_pu", "v_ang_deg"]
+    # Blank separator
+    blank_idx = next(i for i, row in enumerate(rows) if row == [])
+    # Branch header follows the blank
+    assert rows[blank_idx + 1] == ["branch_name", "p_from_pu", "q_from_pu", "p_to_pu", "q_to_pu"]

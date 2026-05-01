@@ -1,5 +1,5 @@
 """
-AC SOCP relaxation and linear DC OPF for PythonPowerFlow Circuit objects.
+AC SOCP relaxation, linear DC OPF, and pandapower wrapper for PythonPowerFlow Circuit objects.
 
 SOCP variables:  Wd[i] = |V_i|²,  Wr[k]/Wi[k] = Re/Im(V_i·V_j*)
 SOC per branch k:  ‖[2Wr, 2Wi, Wd_i−Wd_j]‖₂ ≤ Wd_i+Wd_j
@@ -10,18 +10,29 @@ DC power balance:  B_DC · θ = A_gen · Pg − P_load   (lossless, V≡1 pu)
 Objective (opf mode):  min  Σ_g cost_g · Pg
          (pf mode):    fix PV generators' Pg, slack free, feasibility
 
+All three solvers return the same dict with keys:
+    source, v_mag, v_ang_deg, p_fr, q_fr, p_to, q_to, converged, details
+
 Public API:
     solve_socp(circuit, mode, verbose, output_csv, gen_limits, gen_costs, v_min, v_max)
     solve_dc_opf(circuit, mode, verbose, output_csv, gen_limits, gen_costs)
+    solve_pandapower(net, mode, verbose, output_csv, gen_costs, sn_mva)
 """
 from __future__ import annotations
 
+import copy
 import csv
 import time
 from collections import deque
 
 import numpy as np
 import cvxpy as cp
+
+try:
+    import pandapower as pp
+    _PP_AVAILABLE = True
+except ImportError:
+    _PP_AVAILABLE = False
 
 from bus import BusType
 from settings import grid_settings
@@ -232,6 +243,9 @@ def _socp_cvxpy(d, mode, verbose):
             obj_val=float(prob.objective.value),
             backend_used="cvxpy", solve_time_s=elapsed,
             p_gen_pu=Pg.value.tolist(), q_gen_pu=Qg.value.tolist(),
+            # Lifted W variables — surfaced for relaxation-gap analysis.
+            # Order matches the bp list (lines first, then transformers).
+            Wd=Wd_v.tolist(), Wr=Wr_v.tolist(), Wi=Wi_v.tolist(),
         ),
     }, None
 
@@ -329,16 +343,17 @@ def _dc_lp_cvxpy(d, mode, verbose):
 
 # ── CSV output ─────────────────────────────────────────────────────────────
 
-def _write_results_csv(result, d, path):
+def _write_results_csv(result, bus_names, branch_names, path):
+    """Write bus voltages/angles and branch flows to a two-section CSV file."""
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["bus_name", "v_mag_pu", "v_ang_deg"])
-        for name, vm, va in zip(d["bus_names"], result["v_mag"], result["v_ang_deg"]):
+        for name, vm, va in zip(bus_names, result["v_mag"], result["v_ang_deg"]):
             w.writerow([name, f"{vm:.6f}", f"{va:.6f}"])
         w.writerow([])
         w.writerow(["branch_name", "p_from_pu", "q_from_pu", "p_to_pu", "q_to_pu"])
         for name, pf, qf, pt, qt in zip(
-            d["branch_names"], result["p_fr"], result["q_fr"],
+            branch_names, result["p_fr"], result["q_fr"],
             result["p_to"], result["q_to"]
         ):
             w.writerow([name, f"{pf:.6f}", f"{qf:.6f}", f"{pt:.6f}", f"{qt:.6f}"])
@@ -383,7 +398,7 @@ def solve_socp(circuit, mode="pf", verbose=False,
         }
 
     if output_csv:
-        _write_results_csv(result, d, output_csv)
+        _write_results_csv(result, d["bus_names"], d["branch_names"], output_csv)
     return result
 
 
@@ -425,5 +440,271 @@ def solve_dc_opf(circuit, mode="opf", verbose=False,
         }
 
     if output_csv:
-        _write_results_csv(result, d, output_csv)
+        _write_results_csv(result, d["bus_names"], d["branch_names"], output_csv)
     return result
+
+
+def solve_pandapower(net, mode="pf", verbose=False,
+                     output_csv=None, gen_costs=None, sn_mva=None) -> dict:
+    """
+    Run pandapower AC power flow or DC OPF and return results in the standard format.
+
+    Results are directly comparable to solve_socp() and solve_dc_opf() output:
+    all power flows are in per-unit on the network's MVA base.
+
+    Parameters
+    ----------
+    net         : pandapower network (pre-built with buses, lines, loads, generators)
+    mode        : "pf"  — AC Newton-Raphson via pp.runpp
+                  "opf" — DC OPF via pp.rundcopp (linear, lossless)
+    verbose     : passed to the pandapower solver
+    output_csv  : file path or None; if given, writes bus voltages/angles and line
+                  flows in the same two-section format as the other solvers
+    gen_costs   : dict  element_name -> cost ($/MWh); adds linear poly costs to
+                  matching ext_grid and gen elements (applied to a copy of net,
+                  so the original is not modified)
+    sn_mva      : MVA base for per-unit conversion (default: net.sn_mva)
+
+    Returns
+    -------
+    dict with keys:
+        source       : "pandapower"
+        v_mag        : np.ndarray of voltage magnitudes in pu (one per bus)
+        v_ang_deg    : np.ndarray of voltage angles in degrees (one per bus)
+        p_fr         : np.ndarray of from-end real power in pu (one per line)
+        q_fr         : np.ndarray of from-end reactive power in pu (zero for DC)
+        p_to         : np.ndarray of to-end real power in pu
+        q_to         : np.ndarray of to-end reactive power in pu (zero for DC)
+        converged    : bool
+        details      : dict with solve_time_s, backend_used, and (for opf mode)
+                       p_gen_mw and p_ext_grid_mw dispatch arrays
+    """
+    if not _PP_AVAILABLE:
+        raise ImportError("pandapower is not installed")
+
+    sn_mva = float(sn_mva or net.sn_mva)
+
+    # Work on a copy when we need to inject costs, so the caller's net is untouched
+    if gen_costs and mode == "opf":
+        net = copy.deepcopy(net)
+        for idx, row in net.ext_grid.iterrows():
+            name = row.get("name", f"ext_grid_{idx}")
+            if name in gen_costs:
+                pp.create_poly_cost(net, idx, "ext_grid",
+                                    cp1_eur_per_mw=gen_costs[name])
+        for idx, row in net.gen.iterrows():
+            name = row.get("name", f"gen_{idx}")
+            if name in gen_costs:
+                pp.create_poly_cost(net, idx, "gen",
+                                    cp1_eur_per_mw=gen_costs[name])
+
+    t0 = time.perf_counter()
+    try:
+        if mode == "pf":
+            pp.runpp(net, algorithm="nr", calculate_voltage_angles=True,
+                     max_iteration=50, verbose=verbose)
+            converged = bool(net["converged"])
+        elif mode == "opf":
+            pp.rundcopp(net, verbose=verbose)
+            converged = bool(net["OPF_converged"])
+        else:
+            raise ValueError(f"mode must be 'pf' or 'opf', got {mode!r}")
+    except Exception as e:
+        N = len(net.bus)
+        L = len(net.line)
+        return {
+            "source": "pandapower",
+            "v_mag": np.ones(N), "v_ang_deg": np.zeros(N),
+            "p_fr": np.zeros(L), "q_fr": np.zeros(L),
+            "p_to": np.zeros(L), "q_to": np.zeros(L),
+            "converged": False,
+            "details": dict(message=str(e), backend_used="pandapower"),
+        }
+    elapsed = time.perf_counter() - t0
+
+    bus_names   = net.bus["name"].tolist()
+    branch_names = net.line["name"].tolist()
+
+    v_mag = net.res_bus["vm_pu"].values.copy()
+    v_ang = net.res_bus["va_degree"].values.copy()
+    p_fr  = net.res_line["p_from_mw"].values.copy()  / sn_mva
+    q_fr  = net.res_line["q_from_mvar"].values.copy() / sn_mva
+    p_to  = net.res_line["p_to_mw"].values.copy()    / sn_mva
+    q_to  = net.res_line["q_to_mvar"].values.copy()  / sn_mva
+
+    details = dict(
+        mode=mode,
+        solve_time_s=elapsed,
+        backend_used="pandapower",
+    )
+    if mode == "opf":
+        details["p_gen_mw"]      = net.res_gen["p_mw"].values.tolist()
+        details["p_ext_grid_mw"] = net.res_ext_grid["p_mw"].values.tolist()
+    else:
+        details["p_gen_mw"]      = net.res_gen["p_mw"].values.tolist()
+        details["p_ext_grid_mw"] = net.res_ext_grid["p_mw"].values.tolist()
+
+    result = {
+        "source":    "pandapower",
+        "v_mag":     v_mag,
+        "v_ang_deg": v_ang,
+        "p_fr": p_fr, "q_fr": q_fr,
+        "p_to": p_to, "q_to": q_to,
+        "converged": converged,
+        "details":   details,
+    }
+
+    if output_csv:
+        _write_results_csv(result, bus_names, branch_names, output_csv)
+
+    return result
+
+
+# ── SOCP relaxation-gap diagnostics ───────────────────────────────────────
+
+def _branch_pairs_and_names(circuit):
+    """Bus-index pairs and branch names in the same order as solve_socp's bp."""
+    bus_names = list(circuit.calc_ybus().index)
+    bus_idx = {n: i for i, n in enumerate(bus_names)}
+    pairs, names = [], []
+    for ln in circuit.transmission_lines.values():
+        pairs.append((bus_idx[ln.bus1_name], bus_idx[ln.bus2_name]))
+        names.append(ln.name)
+    for tx in circuit.transformers.values():
+        pairs.append((bus_idx[tx.bus1_name], bus_idx[tx.bus2_name]))
+        names.append(tx.name)
+    return bus_idx, pairs, names
+
+
+def branch_tightness(circuit, socp_result) -> dict:
+    """Per-branch SOC tightness ratio τ_ij = |W_ij|² / (W_ii · W_jj).
+
+    For each branch, τ ∈ [0, 1]:
+        τ = 1 → SOC constraint is active; the 2×2 principal minor of W
+                involving (i, j) has rank ≤ 1
+        τ < 1 → relaxation is slack on this branch; |W_ij| is below the
+                physical bound √(W_ii · W_jj) — no real voltages can
+                produce this lifted W locally
+
+    **Necessary, not sufficient.** τ = 1 at every branch is required for
+    the relaxation to be exact, but on meshed networks it is not enough:
+    the SOC constraint only fixes magnitudes |W_ij|, not phases arg(W_ij),
+    so the W matrix can satisfy every 2×2 condition while still failing
+    global rank-1 around loops. Use loop_residuals() for that check.
+
+    On a radial (tree) network there are no loops, and τ = 1 everywhere
+    *does* imply global rank-1, so this single diagnostic is sufficient.
+
+    Parameters
+    ----------
+    circuit       : same Circuit object passed to solve_socp
+    socp_result   : dict returned by solve_socp (must include details.Wr, Wi)
+
+    Returns
+    -------
+    dict with keys:
+        branch_names  : list[str]                 (length L)
+        tau           : ndarray (L,)              τ_ij ∈ [0, 1]
+        gap           : ndarray (L,)              1 − τ_ij ∈ [0, 1]
+        worst_branch  : str                       branch with largest gap
+        worst_gap     : float                     max(1 − τ)
+        max_abs_gap   : float                     same as worst_gap (alias)
+    """
+    if "Wr" not in socp_result.get("details", {}):
+        raise ValueError("socp_result is missing details.Wr/Wi — re-run solve_socp")
+
+    Wr_v = np.asarray(socp_result["details"]["Wr"])
+    Wi_v = np.asarray(socp_result["details"]["Wi"])
+    Wd_v = np.asarray(socp_result["details"].get("Wd",
+                                                  socp_result["v_mag"] ** 2))
+
+    _, pairs, names = _branch_pairs_and_names(circuit)
+    L = len(pairs)
+    tau = np.empty(L)
+    for k, (i, j) in enumerate(pairs):
+        denom = Wd_v[i] * Wd_v[j]
+        tau[k] = (Wr_v[k] ** 2 + Wi_v[k] ** 2) / denom if denom > 0 else 0.0
+
+    gap = 1.0 - tau
+    worst = int(np.argmax(gap))
+    return dict(
+        branch_names=names,
+        tau=tau,
+        gap=gap,
+        worst_branch=names[worst],
+        worst_gap=float(gap[worst]),
+        max_abs_gap=float(gap[worst]),
+    )
+
+
+def loop_residuals(circuit, socp_result) -> dict:
+    """Angle residual around each fundamental cycle of the SOCP solution.
+
+    For the BFS spanning tree from the slack, every non-tree branch closes
+    exactly one fundamental cycle. The angle drop predicted by that branch's
+    own W_ij (= arctan(Wi/Wr)) should match the angle drop predicted by the
+    sum of tree-path drops between its endpoints. Any mismatch is the angle
+    residual of that loop — a direct measurement of how far the relaxation
+    drifts from a rank-1 solution.
+
+    Returns
+    -------
+    dict with keys:
+        non_tree_branches : list[str]    branch names that close a loop
+        residuals_rad     : ndarray      residual per loop (radians, wrapped to ±π)
+        residuals_deg     : ndarray      same in degrees
+        max_abs_deg       : float        max |residual| across all loops (0 if radial)
+    """
+    if "Wr" not in socp_result.get("details", {}):
+        raise ValueError("socp_result is missing details.Wr/Wi — re-run solve_socp")
+
+    Wr_v = np.asarray(socp_result["details"]["Wr"])
+    Wi_v = np.asarray(socp_result["details"]["Wi"])
+
+    bus_idx, pairs, names = _branch_pairs_and_names(circuit)
+    N = len(bus_idx)
+
+    slack_idx = next(bus_idx[name]
+                     for name, b in circuit.buses.items()
+                     if b.bus_type == BusType.Slack)
+
+    adj = {n: [] for n in range(N)}
+    for k, (i, j) in enumerate(pairs):
+        adj[i].append((j, k, True))
+        adj[j].append((i, k, False))
+
+    # BFS from slack: assign tree angles and mark tree edges
+    angles = np.zeros(N)
+    visited = {slack_idx}
+    queue = deque([slack_idx])
+    tree_edges = set()
+    while queue:
+        n = queue.popleft()
+        for nbr, k, fwd in adj[n]:
+            if nbr in visited:
+                continue
+            visited.add(nbr)
+            queue.append(nbr)
+            tree_edges.add(k)
+            arg_W = np.arctan2(Wi_v[k], Wr_v[k])
+            # arg(W_ij) = θ_i − θ_j with i = stored br['i']
+            angles[nbr] = angles[n] - arg_W if fwd else angles[n] + arg_W
+
+    out_branches, residuals = [], []
+    for k, (i, j) in enumerate(pairs):
+        if k in tree_edges:
+            continue
+        direct = np.arctan2(Wi_v[k], Wr_v[k])     # θ_i − θ_j from this branch
+        predicted = angles[i] - angles[j]          # θ_i − θ_j from tree path
+        r = direct - predicted
+        r = (r + np.pi) % (2 * np.pi) - np.pi      # wrap to (-π, π]
+        out_branches.append(names[k])
+        residuals.append(r)
+
+    res_arr = np.array(residuals) if residuals else np.array([])
+    return dict(
+        non_tree_branches=out_branches,
+        residuals_rad=res_arr,
+        residuals_deg=np.degrees(res_arr),
+        max_abs_deg=float(np.max(np.abs(np.degrees(res_arr)))) if len(res_arr) else 0.0,
+    )
