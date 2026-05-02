@@ -170,9 +170,12 @@ def _socp_cvxpy(d, mode, verbose):
         Qg >= d["Q_min"], Qg <= d["Q_max"],
     ]
 
-    # PV bus voltage equality (pf mode honours the v_setpoint)
-    for pv_i, v_pv in d["pv_constraints"]:
-        cons.append(Wd[pv_i] == v_pv**2)
+    # PV bus voltage equality — pf mode only.
+    # In opf mode, PV-bus voltages are free within [v_min, v_max]; fixing them
+    # to the setpoint over-constrains the AC OPF and can cause infeasibility.
+    if mode == "pf":
+        for pv_i, v_pv in d["pv_constraints"]:
+            cons.append(Wd[pv_i] == v_pv**2)
 
     for k, br in enumerate(bp):
         cons.append(
@@ -455,8 +458,9 @@ def solve_pandapower(net, mode="pf", verbose=False,
     Parameters
     ----------
     net         : pandapower network (pre-built with buses, lines, loads, generators)
-    mode        : "pf"  — AC Newton-Raphson via pp.runpp
-                  "opf" — DC OPF via pp.rundcopp (linear, lossless)
+    mode        : "pf"     — AC Newton-Raphson via pp.runpp
+                  "opf"   — DC OPF via pp.rundcopp (linear, lossless)
+                  "acopf" — AC OPF via pp.runopp (nonlinear; requires PYPOWER)
     verbose     : passed to the pandapower solver
     output_csv  : file path or None; if given, writes bus voltages/angles and line
                   flows in the same two-section format as the other solvers
@@ -485,7 +489,7 @@ def solve_pandapower(net, mode="pf", verbose=False,
     sn_mva = float(sn_mva or net.sn_mva)
 
     # Work on a copy when we need to inject costs, so the caller's net is untouched
-    if gen_costs and mode == "opf":
+    if gen_costs and mode in ("opf", "acopf"):
         net = copy.deepcopy(net)
         for idx, row in net.ext_grid.iterrows():
             name = row.get("name", f"ext_grid_{idx}")
@@ -507,8 +511,11 @@ def solve_pandapower(net, mode="pf", verbose=False,
         elif mode == "opf":
             pp.rundcopp(net, verbose=verbose)
             converged = bool(net["OPF_converged"])
+        elif mode == "acopf":
+            pp.runopp(net, verbose=verbose)
+            converged = bool(net["OPF_converged"])
         else:
-            raise ValueError(f"mode must be 'pf' or 'opf', got {mode!r}")
+            raise ValueError(f"mode must be 'pf', 'opf', or 'acopf', got {mode!r}")
     except Exception as e:
         N = len(net.bus)
         L = len(net.line)
@@ -536,13 +543,20 @@ def solve_pandapower(net, mode="pf", verbose=False,
         mode=mode,
         solve_time_s=elapsed,
         backend_used="pandapower",
+        p_gen_mw=net.res_gen["p_mw"].values.tolist(),
+        p_ext_grid_mw=net.res_ext_grid["p_mw"].values.tolist(),
     )
-    if mode == "opf":
-        details["p_gen_mw"]      = net.res_gen["p_mw"].values.tolist()
-        details["p_ext_grid_mw"] = net.res_ext_grid["p_mw"].values.tolist()
-    else:
-        details["p_gen_mw"]      = net.res_gen["p_mw"].values.tolist()
-        details["p_ext_grid_mw"] = net.res_ext_grid["p_mw"].values.tolist()
+    if mode == "acopf" and gen_costs:
+        obj = 0.0
+        for idx, row in net.ext_grid.iterrows():
+            name = row.get("name", f"ext_grid_{idx}")
+            if name in gen_costs:
+                obj += net.res_ext_grid.loc[idx, "p_mw"] * gen_costs[name]
+        for idx, row in net.gen.iterrows():
+            name = row.get("name", f"gen_{idx}")
+            if name in gen_costs:
+                obj += net.res_gen.loc[idx, "p_mw"] * gen_costs[name]
+        details["obj_val"] = obj
 
     result = {
         "source":    "pandapower",
@@ -611,7 +625,10 @@ def branch_tightness(circuit, socp_result) -> dict:
         max_abs_gap   : float                     same as worst_gap (alias)
     """
     if "Wr" not in socp_result.get("details", {}):
-        raise ValueError("socp_result is missing details.Wr/Wi — re-run solve_socp")
+        _, _, names = _branch_pairs_and_names(circuit)
+        nan_arr = np.full(len(names), np.nan)
+        return dict(branch_names=names, tau=nan_arr, gap=nan_arr,
+                    worst_branch=None, worst_gap=np.nan, max_abs_gap=np.nan)
 
     Wr_v = np.asarray(socp_result["details"]["Wr"])
     Wi_v = np.asarray(socp_result["details"]["Wi"])
@@ -656,7 +673,8 @@ def loop_residuals(circuit, socp_result) -> dict:
         max_abs_deg       : float        max |residual| across all loops (0 if radial)
     """
     if "Wr" not in socp_result.get("details", {}):
-        raise ValueError("socp_result is missing details.Wr/Wi — re-run solve_socp")
+        return dict(non_tree_branches=[], residuals_rad=np.array([]),
+                    residuals_deg=np.array([]), max_abs_deg=np.nan)
 
     Wr_v = np.asarray(socp_result["details"]["Wr"])
     Wi_v = np.asarray(socp_result["details"]["Wi"])
