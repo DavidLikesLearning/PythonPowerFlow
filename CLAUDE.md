@@ -13,6 +13,8 @@
 | `theory.md` | Full mathematical derivation: AC OPF → lifted W variables → rank-1 → SOC, branch tightness τ, loop residuals, radial exactness theorem, WB5 example, ring operating regimes |
 | `socp_proposal.md` | Shorter formulation reference with API table and solver comparison table |
 | `references.md` | Annotated bibliography: all sources used in this project with one-line summaries of their specific contribution |
+| `David_OPFs_report.pdf` | Short technical report (≤5 pages): solvers, metrics, test cases, and key results with correct LaTeX-rendered math |
+| `David_OPFs_demo.pdf` | 2-page interactive demo: five-step walkthrough, WB5 example session, and sample output figures from `test-cli/` |
 
 Supporting files from the existing codebase: `circuit.py`, `bus.py`, `settings.py` (provides `grid_settings.sbase`).
 
@@ -313,17 +315,15 @@ Same 22-bus ring as above, but generators on buses 1, 3, 5, 7, 9, 11 cost **$1/M
 
 Run with `python my_opfs.py`.  Six-step terminal session; full usage in `my_opfs_guide.md`.
 
-**Step 1 — SOCP mode** (mutually exclusive): SOCP-PF, SOCP-OPF, or skip.
+**Step 1 — Grid**: IEEE 14-bus, WB5, Case22loop (uniform), Case22loop (asymmetric).
 
-**Step 2 — Additional solvers** (multi-select): DC-OPF, PP-NR, PP-DCOPF, PP-ACOPF.
+**Step 2 — Solvers** (multi-select, comma-separated, Enter = all): NR, Local DC OPF, Local SOC, Panda DC OPF, Panda AC OPF. SOC mode (PF vs OPF) is inferred from the chosen grid automatically.
 
-**Step 3 — Grid**: IEEE 14-bus, WB5, Case22loop (uniform), Case22loop (asymmetric).
+**Step 3 — Generator costs**: shows defaults; optionally accepts a comma-separated list or a CSV file (auto-detects 1-column numeric or 2-column `gen_name,cost` format).
 
-**Step 4 — Generator costs**: shows defaults; optionally accepts a comma-separated list or a CSV file (auto-detects 1-column numeric or 2-column `gen_name,cost` format).
+**Step 4 — Metrics**: any subset of voltage magnitudes, voltage angles, branch P/Q flows, objective value, convergence, solve time, SOCP τ per branch, loop residuals.
 
-**Step 5 — Metrics**: any subset of voltage magnitudes, voltage angles, branch P/Q flows, objective value, convergence, solve time, SOCP τ per branch, loop residuals.
-
-**Step 6 — Save**: optional CSV path (passed to `compare_solvers`) and/or plot directory (`fig_tightness.png`, `fig_objectives.png`).
+**Step 5 — Save**: optional CSV path (passed to `compare_solvers`) and/or plot directory (`fig_tightness.png`, `fig_objectives.png`).
 
 **Implementation notes:**
 - All prompts run before heavy imports — the menu feels instant.
@@ -331,6 +331,7 @@ Run with `python my_opfs.py`.  Six-step terminal session; full usage in `my_opfs
 - SOCP τ and loop residuals print even when SOCP is skipped from display (with a note).
 - WB5 uses `v_min=0.5, v_max=1.5` automatically; Case22loop variants use `[0.95, 1.05]`.
 - When user declines CSV save, a temp file is used internally and deleted (because `compare_solvers` always opens `output_csv`).
+- Plot saving is gated on metric selection: only plots for the user's chosen metrics are written. Each metric maps to one PNG: `fig_voltages.png`, `fig_angles.png`, `fig_branch_p.png`, `fig_branch_q.png`, `fig_objectives.png`, `fig_tightness.png`. Metrics 6/7/9 (convergence, solve time, loop residuals) are text-only — no plot.
 
 ---
 

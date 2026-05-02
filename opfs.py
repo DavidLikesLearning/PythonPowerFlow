@@ -546,6 +546,8 @@ def solve_pandapower(net, mode="pf", verbose=False,
         p_gen_mw=net.res_gen["p_mw"].values.tolist(),
         p_ext_grid_mw=net.res_ext_grid["p_mw"].values.tolist(),
     )
+    if mode == "opf" and gen_costs and hasattr(net, "res_cost"):
+        details["obj_val"] = float(net.res_cost)
     if mode == "acopf" and gen_costs:
         obj = 0.0
         for idx, row in net.ext_grid.iterrows():

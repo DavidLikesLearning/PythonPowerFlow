@@ -2,6 +2,8 @@
 
 Interactive terminal tool for comparing AC SOCP, DC OPF, and pandapower solvers on standard power-flow test cases.
 
+For a concise written overview of all solvers, metrics, test cases, and results see `David_OPFs_report.pdf`.
+
 ## Quick start
 
 ```bash
@@ -14,26 +16,9 @@ Press **Ctrl-C** at any prompt to exit cleanly.
 
 ## Session walkthrough
 
-The tool walks you through six steps.  All heavy solver imports happen *after* the prompts, so the menu appears instantly.
+The tool walks you through five steps.  All heavy solver imports happen *after* the prompts, so the menu appears instantly.
 
-### Step 1 — SOCP mode  (pick one)
-
-| Choice | What it does |
-|--------|--------------|
-| 1. SOCP-PF | Fixes generator MW dispatch; compares SOCP voltages to pandapower NR as ground truth |
-| 2. SOCP-OPF | Minimises total generation cost; use this to study the duality gap |
-| 3. Skip SOCP | Hides SOCP column in output (SOCP still runs internally for tightness data) |
-
-### Step 2 — Additional solvers  (comma-separated, or Enter for none)
-
-| # | Solver | Notes |
-|---|--------|-------|
-| 1 | DC-OPF | Our cvxpy LP; ignores losses and reactive power |
-| 2 | PP-NR | pandapower Newton-Raphson AC power flow |
-| 3 | PP-DCOPF | pandapower DC OPF (uses 1/x susceptance) |
-| 4 | PP-ACOPF | pandapower AC OPF via PYPOWER interior-point (slow) |
-
-### Step 3 — Grid  (pick one)
+### Step 1 — Grid  (pick one)
 
 | # | Grid | Buses | Key property |
 |---|------|-------|--------------|
@@ -42,7 +27,19 @@ The tool walks you through six steps.  All heavy solver imports happen *after* t
 | 3 | Case22loop (uniform) | 22 | Ring; SOCP exact, zero duality gap |
 | 4 | Case22loop (asymmetric) | 22 | Ring with $1/$4 cost split; two local AC optima |
 
-### Step 4 — Generator costs
+### Step 2 — Solvers to run  (comma-separated, or Enter for all)
+
+| # | Solver | Notes |
+|---|--------|-------|
+| 1 | NR | pandapower Newton-Raphson AC PF |
+| 2 | Local DC OPF | cvxpy LP; ignores losses and reactive power |
+| 3 | Local SOC | SOCP relaxation; mode (PF or OPF) shown in the menu based on the chosen grid |
+| 4 | Panda DC OPF | pandapower DC OPF (uses 1/x susceptance) |
+| 5 | Panda AC OPF | pandapower AC OPF via PYPOWER interior-point (slow) |
+
+Pressing Enter with no input selects all five.  The Local SOC mode is fixed per grid: IEEE 14-bus uses PF mode; WB5 and Case22loop variants use OPF mode.
+
+### Step 3 — Generator costs
 
 Default costs are shown.  Enter **Y** to use them or **N** to supply custom values.
 
@@ -77,7 +74,7 @@ Gen6,40
 Gen8,40
 ```
 
-### Step 5 — Metrics to display  (comma-separated, or Enter for all)
+### Step 4 — Metrics to display  (comma-separated, or Enter for all)
 
 | # | Metric | Source |
 |---|--------|--------|
@@ -93,7 +90,7 @@ Gen8,40
 
 Metrics 8 and 9 are always drawn from the SOCP result, even if SOCP was set to "skip" in Step 1 — a note will say so.
 
-### Step 6 — Save outputs
+### Step 5 — Save outputs
 
 - **CSV** — the four-section comparison file written by `compare_solvers()`: summary, bus voltages, branch flows, SOCP tightness.  Default filename is `<grid>_comparison.csv`.
 - **Plots** — saves PNG files to the chosen directory:
@@ -107,34 +104,31 @@ Metrics 8 and 9 are always drawn from the SOCP result, even if SOCP was set to "
 ### Verify SOCP vs NR on IEEE 14-bus
 
 ```
-Step 1: 1  (SOCP-PF)
-Step 2: 2  (PP-NR)
-Step 3: 1  (IEEE 14-bus)
-Step 4: Y  (default costs)
-Step 5: 1,6,7  (voltages, convergence, solve time)
-Step 6: N / N  (no save)
+Step 1: 1          (IEEE 14-bus)
+Step 2: 1,3        (NR + Local SOC — SOC runs in PF mode automatically)
+Step 3: Y          (default costs)
+Step 4: 1,6,7      (voltages, convergence, solve time)
+Step 5: N / N      (no save)
 ```
 
 ### Check WB5 duality gap
 
 ```
-Step 1: 2  (SOCP-OPF)
-Step 2: 4  (PP-ACOPF)
-Step 3: 2  (WB5)
-Step 4: Y
-Step 5: 5,8,9  (objective, tightness, loop residuals)
-Step 6: Y  wb5_run.csv / N
+Step 1: 2          (WB5)
+Step 2: 3,5        (Local SOC + Panda AC OPF — SOC runs in OPF mode)
+Step 3: Y
+Step 4: 5,8,9      (objective, tightness, loop residuals)
+Step 5: Y  wb5_run.csv / N
 ```
 
 ### Run asymmetric ring with custom costs
 
 ```
-Step 1: 2  (SOCP-OPF)
-Step 2: 2,4  (PP-NR, PP-ACOPF)
-Step 3: 4  (Case22loop asymmetric)
-Step 4: N → b → /path/to/costs.csv
-Step 5: (Enter — all metrics)
-Step 6: Y  c22_custom.csv / Y  ./plots_out
+Step 1: 4          (Case22loop asymmetric)
+Step 2: 1,3,5      (NR + Local SOC + Panda AC OPF)
+Step 3: N → b → /path/to/costs.csv
+Step 4: (Enter — all metrics)
+Step 5: Y  c22_custom.csv / Y  ./plots_out
 ```
 
 ---
